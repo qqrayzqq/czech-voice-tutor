@@ -6,11 +6,12 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message
 
 from czech_tutor.llm import LLMError
+from czech_tutor.reply_models import TutorReply
 
 
 def create_router(
     allowed_user_ids: frozenset[int],
-    reply_to_text: Callable[[str], Awaitable[str]],
+    reply_to_text: Callable[[str], Awaitable[TutorReply]],
 ) -> Router:
     router = Router(name="local_text_bot")
     router.message.filter(
@@ -43,6 +44,6 @@ def create_router(
                     "Сейчас не удалось получить ответ. Попробуй чуть позже.", parse_mode=None
                 )
                 return
-            await message.answer(answer, parse_mode=None)
+            await message.answer(answer.reply_cs, parse_mode=None)
 
     return router

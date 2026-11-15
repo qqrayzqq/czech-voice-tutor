@@ -1,5 +1,7 @@
 import httpx
 
+from czech_tutor.reply_models import TutorReply, parse_tutor_reply
+
 
 class LLMError(RuntimeError):
     pass
@@ -61,10 +63,13 @@ async def generate_reply(
     api_key: str,
     user_text: str,
     system_prompt: str,
-) -> str:
+) -> TutorReply:
     payload = build_request_payload(user_text, system_prompt)
+
     try:
         response = await send_request(client, api_key, payload)
-        return extract_reply(response)
+        raw_text = extract_reply(response)
+        tutor_reply = parse_tutor_reply(raw_text)
+        return tutor_reply
     except (httpx.HTTPError, ValueError) as error:
         raise LLMError("Failed to generate a tutor reply.") from error

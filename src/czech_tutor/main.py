@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from czech_tutor.config import ConfigurationError, Settings
 from czech_tutor.llm import generate_reply
 from czech_tutor.prompts import SYSTEM_PROMPT
+from czech_tutor.reply_models import TutorReply
 from czech_tutor.telegram import create_router
 
 
@@ -18,7 +19,7 @@ async def main(settings: Settings) -> None:
     try:
         async with httpx.AsyncClient() as client:
 
-            async def reply_to_text(text: str) -> str:
+            async def reply_to_text(text: str) -> TutorReply:
                 answer = await generate_reply(
                     client, settings.open_router_api_key, text, SYSTEM_PROMPT
                 )
