@@ -1,6 +1,10 @@
 import httpx
 
 
+class LLMError(RuntimeError):
+    pass
+
+
 def build_request_payload(
     user_text: str,
     system_prompt: str,
@@ -50,3 +54,17 @@ def extract_reply(response: httpx.Response) -> str:
     if not message.strip():
         raise ValueError("Model response content is empty.")
     return message
+
+
+async def generate_reply(
+    client: httpx.AsyncClient,
+    api_key: str,
+    user_text: str,
+    system_prompt: str,
+) -> str:
+    payload = build_request_payload(user_text, system_prompt)
+    try:
+        response = await send_request(client, api_key, payload)
+        return extract_reply(response)
+    except (httpx.HTTPError, ValueError) as error:
+        raise LLMError("Failed to generate a tutor reply.") from error
