@@ -1,10 +1,17 @@
+from collections.abc import Awaitable, Callable
+
 from aiogram import F, Router
 from aiogram.enums import ChatType
 from aiogram.filters import CommandStart
 from aiogram.types import Message
 
+from czech_tutor.llm import LLMError
 
-def create_router(allowed_user_ids: frozenset[int]) -> Router:
+
+def create_router(
+    allowed_user_ids: frozenset[int],
+    reply_to_text: Callable[[str], Awaitable[str]],
+) -> Router:
     router = Router(name="local_text_bot")
     router.message.filter(
         F.chat.type == ChatType.PRIVATE,
@@ -14,9 +21,10 @@ def create_router(allowed_user_ids: frozenset[int]) -> Router:
     @router.message(CommandStart())
     async def start(message: Message) -> None:
         await message.answer(
-            "Ahoj! Это первый шаг Czech Voice Tutor. "
-            "Пока я повторяю твой текст; LLM ещё не подключена. "
-            "Пришли текстовое сообщение."
+            "Ahoj! Я помогу тебе практиковать чешский.\n\n"
+            "Напиши сообщение по-чешски или по-русски: можем поболтать, "
+            "разобрать фразу или узнать новое слово.\n\n"
+            "Пока общаемся текстом; голосовые появятся позже."
         )
 
     @router.message(F.voice)
@@ -26,9 +34,15 @@ def create_router(allowed_user_ids: frozenset[int]) -> Router:
         )
 
     @router.message(F.text)
-    async def echo(message: Message) -> None:
-        # This filter ensures text is present; no HTML/Markdown parsing is enabled.
+    async def handle_text(message: Message) -> None:
         if message.text is not None:
-            await message.answer(message.text, parse_mode=None)
+            try:
+                answer = await reply_to_text(message.text)
+            except LLMError:
+                await message.answer(
+                    "Сейчас не удалось получить ответ. Попробуй чуть позже.", parse_mode=None
+                )
+                return
+            await message.answer(answer, parse_mode=None)
 
     return router
