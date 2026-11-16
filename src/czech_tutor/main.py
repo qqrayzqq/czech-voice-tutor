@@ -14,6 +14,7 @@ from czech_tutor.persistence.connection import (
     create_session_factory,
 )
 from czech_tutor.persistence.conversations import get_or_create_conversation
+from czech_tutor.persistence.history import get_recent_turns
 from czech_tutor.persistence.messages import (
     is_reply_delivery_recorded,
     mark_generation_failed,
@@ -23,6 +24,7 @@ from czech_tutor.persistence.messages import (
 )
 from czech_tutor.persistence.users import upsert_user
 from czech_tutor.telegram.handlers import create_router
+from czech_tutor.tutor.context import trim_history
 from czech_tutor.tutor.errors import LLMError, StorageError
 from czech_tutor.tutor.prompts import SYSTEM_PROMPT
 from czech_tutor.tutor.schemas import ReplyToSend
@@ -54,11 +56,18 @@ async def main(settings: Settings) -> None:
                             telegram_message_id,
                             text,
                         )
+                        if message_id is not None:
+                            turns = await get_recent_turns(session, conversation.id, message_id)
+                            history_texts = [
+                                (user.text, assistant.text) for user, assistant in turns
+                            ]
                 except SQLAlchemyError as error:
                     raise StorageError("Failed to prepare the conversation.") from error
 
                 if message_id is None:
                     return None
+
+                history = trim_history(history_texts)
 
                 try:
                     result = await generate_reply(
@@ -66,6 +75,7 @@ async def main(settings: Settings) -> None:
                         settings.open_router_api_key,
                         text,
                         SYSTEM_PROMPT,
+                        history,
                     )
                 except LLMError:
                     try:
