@@ -1,10 +1,7 @@
 import httpx
 
-from czech_tutor.reply_models import TutorReply, parse_tutor_reply
-
-
-class LLMError(RuntimeError):
-    pass
+from czech_tutor.tutor.errors import LLMError
+from czech_tutor.tutor.schemas import TutorReply, parse_tutor_reply
 
 
 def build_request_payload(
