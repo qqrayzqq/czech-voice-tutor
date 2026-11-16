@@ -11,6 +11,7 @@ class Settings:
     bot_token: str = field(repr=False)
     allowed_user_ids: frozenset[int]
     open_router_api_key: str = field(repr=False)
+    database_url: str = field(repr=False)
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -32,8 +33,13 @@ class Settings:
         if not open_router_api_key:
             raise ConfigurationError("Set OPENROUTER_API_KEY in .env or the environment.")
 
+        database_url = os.environ.get("DATABASE_URL", "").strip()
+        if not database_url:
+            raise ConfigurationError("Set DATABASE_URL in .env or the environment.")
+
         return cls(
             bot_token=token,
             allowed_user_ids=user_ids,
             open_router_api_key=open_router_api_key,
+            database_url=database_url,
         )

@@ -1,4 +1,4 @@
-"""System instructions for the first text-based Czech tutor."""
+"""System instructions for Czech conversation and structured replies."""
 
 SYSTEM_PROMPT: str = """
 Ты — дружелюбный собеседник и внимательный помощник для практики
