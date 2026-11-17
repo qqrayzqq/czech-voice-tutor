@@ -3,17 +3,21 @@ from contextlib import asynccontextmanager
 from pathlib import Path as FilePath
 from typing import Annotated
 
+import httpx
+from aiogram import Bot
+from aiogram.types import Update
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Path, Request
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
 
-from czech_tutor.api.dependencies import get_current_user_id
+from czech_tutor.api.dependencies import get_current_user_id, verify_telegram_webhook
 from czech_tutor.config import Settings
 from czech_tutor.persistence.connection import (
     create_database_engine,
     create_session_factory,
 )
+from czech_tutor.telegram.bootstrap import create_dispatcher
 from czech_tutor.tutor.errors import StorageError
 from czech_tutor.tutor.feedback_service import load_reply_feedback
 from czech_tutor.tutor.schemas import ReplyFeedback
@@ -24,12 +28,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     load_dotenv()
     settings = Settings.from_env()
     engine = create_database_engine(settings.database_url)
+    bot = Bot(settings.bot_token)
+    app.state.bot = bot
     try:
         app.state.settings = settings
         app.state.session_factory = create_session_factory(engine)
-        yield
+        async with httpx.AsyncClient() as client:
+            dispatcher = create_dispatcher(settings, app.state.session_factory, client)
+            app.state.dispatcher = dispatcher
+            yield
     finally:
-        await engine.dispose()
+        try:
+            await engine.dispose()
+        finally:
+            await bot.session.close()
 
 
 def create_app() -> FastAPI:
@@ -62,5 +74,18 @@ def create_app() -> FastAPI:
         if feedback is None:
             raise HTTPException(404, detail="Reply not found.")
         return feedback
+
+    @app.post(
+        "/telegram/webhook",
+        dependencies=[Depends(verify_telegram_webhook)],
+    )
+    async def telegram_webhook(
+        update: Update,
+        request: Request,
+    ) -> dict[str, bool]:
+        bot = request.app.state.bot
+        dispatcher = request.app.state.dispatcher
+        await dispatcher.feed_update(bot, update)
+        return {"ok": True}
 
     return app

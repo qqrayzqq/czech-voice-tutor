@@ -1,4 +1,5 @@
 import os
+import re
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
@@ -14,6 +15,7 @@ class Settings:
     open_router_api_key: str = field(repr=False)
     database_url: str = field(repr=False)
     mini_app_url: str | None = None
+    webhook_secret: str | None = field(default=None, repr=False)
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -47,10 +49,20 @@ class Settings:
                     "MINI_APP_URL must be an HTTPS URL without query parameters or a fragment."
                 )
 
+        webhook_secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "").strip() or None
+        if (
+            webhook_secret is not None
+            and re.fullmatch(r"[A-Za-z0-9_-]{1,256}", webhook_secret) is None
+        ):
+            raise ConfigurationError(
+                "TELEGRAM_WEBHOOK_SECRET must contain 1-256 ASCII letters, digits, '_' or '-'."
+            )
+
         return cls(
             bot_token=token,
             allowed_user_ids=user_ids,
             open_router_api_key=open_router_api_key,
             database_url=database_url,
             mini_app_url=mini_app_url,
+            webhook_secret=webhook_secret,
         )
