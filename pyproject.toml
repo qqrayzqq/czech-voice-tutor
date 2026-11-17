@@ -17,6 +17,7 @@ dependencies = [
 
 [project.scripts]
 czech-tutor = "czech_tutor.main:run"
+czech-tutor-webhook = "czech_tutor.telegram.webhook_setup:run"
 
 [build-system]
 requires = ["hatchling>=1.27,<2"]
