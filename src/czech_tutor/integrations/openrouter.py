@@ -14,8 +14,65 @@ def build_request_payload(
     res["provider"] = {
         "only": ["sail-research/fp4"],
         "allow_fallbacks": True,
+        "require_parameters": True,
         # USD per million tokens; headroom for price changes at the selected endpoint.
         "max_price": {"prompt": 0.20, "completion": 0.30},
+    }
+    # Ask the provider for the same contract that Pydantic validates locally.
+    res["response_format"] = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "tutor_reply",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "reply_cs": {
+                        "type": "string",
+                        "description": (
+                            "Only Czech dialogue or a corrected Czech example; no grammar lecture."
+                        ),
+                    },
+                    "note_ru": {
+                        "type": "string",
+                        "description": (
+                            "Explanation in Russian. Czech quotations allowed. "
+                            "Empty if not needed or already explained in corrections."
+                        ),
+                    },
+                    "corrections": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "original": {
+                                    "type": "string",
+                                    "description": (
+                                        "Exact erroneous fragment of the current user message."
+                                    ),
+                                },
+                                "corrected": {
+                                    "type": "string",
+                                    "description": (
+                                        "Corrected version preserving the intended meaning."
+                                    ),
+                                },
+                                "explanation_ru": {
+                                    "type": "string",
+                                    "description": (
+                                        "Brief explanation in Russian; Czech quotations allowed."
+                                    ),
+                                },
+                            },
+                            "required": ["original", "corrected", "explanation_ru"],
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+                "required": ["reply_cs", "note_ru", "corrections"],
+                "additionalProperties": False,
+            },
+        },
     }
     res["reasoning"] = {"effort": "high"}
     res["temperature"] = 0.3
