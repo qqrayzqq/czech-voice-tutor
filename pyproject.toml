@@ -39,3 +39,6 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+
+[tool.vercel]
+entrypoint = "src.czech_tutor.api.asgi:app"
