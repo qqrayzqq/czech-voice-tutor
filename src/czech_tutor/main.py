@@ -91,7 +91,11 @@ async def main(settings: Settings) -> None:
                 except (SQLAlchemyError, ValueError) as error:
                     raise StorageError("Failed to save the tutor reply.") from error
 
-                return ReplyToSend(reply_id=reply.id, reply_cs=result.reply_cs)
+                return ReplyToSend(
+                    reply_id=reply.id,
+                    reply_cs=result.reply_cs,
+                    corrections_count=len(result.corrections),
+                )
 
             async def confirm_reply_sent(
                 reply_id: int,
@@ -116,7 +120,12 @@ async def main(settings: Settings) -> None:
 
             dispatcher = Dispatcher()
             dispatcher.include_router(
-                create_router(settings.allowed_user_ids, reply_to_text, confirm_reply_sent)
+                create_router(
+                    settings.allowed_user_ids,
+                    reply_to_text,
+                    confirm_reply_sent,
+                    settings.mini_app_url,
+                )
             )
             await dispatcher.start_polling(
                 bot,

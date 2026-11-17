@@ -20,6 +20,7 @@ class ReplyToSend(BaseModel):
 
     reply_id: int
     reply_cs: str
+    corrections_count: int
 
 
 class ReplyFeedback(BaseModel):

@@ -6,6 +6,7 @@ from aiogram.enums import ChatType
 from aiogram.filters import CommandStart
 from aiogram.types import Message
 
+from czech_tutor.telegram.keyboards import build_feedback_keyboard
 from czech_tutor.tutor.errors import LLMError, StorageError
 from czech_tutor.tutor.schemas import ReplyToSend
 
@@ -16,6 +17,7 @@ def create_router(
     allowed_user_ids: frozenset[int],
     reply_to_text: Callable[[int, str | None, int, int, str], Awaitable[ReplyToSend | None]],
     confirm_reply_sent: Callable[[int, int, int], Awaitable[None]],
+    mini_app_url: str | None = None,
 ) -> Router:
     router = Router(name="local_text_bot")
     router.message.filter(
@@ -42,7 +44,6 @@ def create_router(
     async def handle_text(message: Message) -> None:
         if message.text is None or message.from_user is None:
             return
-
         try:
             answer = await reply_to_text(
                 message.from_user.id,
@@ -61,7 +62,16 @@ def create_router(
         if answer is None:
             return
 
-        sent = await message.answer(answer.reply_cs, parse_mode=None)
+        keyboard = build_feedback_keyboard(
+            mini_app_url,
+            answer.reply_id,
+            answer.corrections_count,
+        )
+        sent = await message.answer(
+            answer.reply_cs,
+            parse_mode=None,
+            reply_markup=keyboard,
+        )
         try:
             await confirm_reply_sent(answer.reply_id, sent.chat.id, sent.message_id)
         except StorageError:
