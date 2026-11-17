@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 
 class ConfigurationError(ValueError):
@@ -12,6 +13,7 @@ class Settings:
     allowed_user_ids: frozenset[int]
     open_router_api_key: str = field(repr=False)
     database_url: str = field(repr=False)
+    mini_app_url: str | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -37,9 +39,18 @@ class Settings:
         if not database_url:
             raise ConfigurationError("Set DATABASE_URL in .env or the environment.")
 
+        mini_app_url = os.environ.get("MINI_APP_URL", "").strip() or None
+        if mini_app_url is not None:
+            parsed = urlsplit(mini_app_url)
+            if parsed.scheme != "https" or not parsed.hostname or parsed.query or parsed.fragment:
+                raise ConfigurationError(
+                    "MINI_APP_URL must be an HTTPS URL without query parameters or a fragment."
+                )
+
         return cls(
             bot_token=token,
             allowed_user_ids=user_ids,
             open_router_api_key=open_router_api_key,
             database_url=database_url,
+            mini_app_url=mini_app_url,
         )
