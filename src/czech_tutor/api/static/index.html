@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="no-referrer">
+  <title>Разбор ответа · Czech Voice Tutor</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="icon-message" viewBox="0 0 24 24"><path d="M20 11.5a8 8 0 0 1-8 8H5l-3 3v-11a9 9 0 0 1 18 0Z"/><path d="M7 9h8m-8 4h5"/></symbol>
+    <symbol id="icon-spark" viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z"/></symbol>
+    <symbol id="icon-moon" viewBox="0 0 24 24"><path d="M20.5 13.5A8.5 8.5 0 0 1 10.5 3.4a8.5 8.5 0 1 0 10 10.1Z"/></symbol>
+    <symbol id="icon-back" viewBox="0 0 24 24"><path d="M19 12H5m6-6-6 6 6 6"/></symbol>
+    <symbol id="icon-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></symbol>
+  </svg>
+
+  <div class="page-shell">
+    <header class="topbar">
+      <div class="brand" aria-label="Czech Voice Tutor">
+        <span class="brand-mark" aria-hidden="true">č<span></span></span>
+        <span class="brand-name">Czech<span>voice tutor</span></span>
+      </div>
+      <div class="header-actions">
+        <span id="demo-badge" class="demo-badge" hidden>Демо · вымышленный пример</span>
+        <button id="theme-toggle" class="icon-button" type="button" aria-label="Переключить тему">
+          <svg class="icon"><use href="#icon-moon"/></svg>
+        </button>
+        <button id="close-button" class="back-button" type="button" hidden>
+          <svg class="icon"><use href="#icon-back"/></svg><span>В чат</span>
+        </button>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="hero" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow"><span class="status-dot"></span> ТВОЯ ПРАКТИКА ЧЕШСКОГО</p>
+          <h1 id="page-title">Разбор ответа<span class="title-dot">.</span></h1>
+          <p class="hero-description">Маленькие исправления.<br class="mobile-break"> Больше уверенности в разговоре.</p>
+        </div>
+        <div class="hero-art" aria-hidden="true"><span>ř</span><svg class="icon"><use href="#icon-spark"/></svg><i>ahoj!</i></div>
+      </section>
+
+      <section id="loading-state" class="state-card" role="status" aria-live="polite">
+        <div class="loading-indicator" aria-hidden="true"><span></span><span></span><span></span></div>
+        <h2>Собираем твой разбор</h2>
+        <p>Ещё мгновение — и всё будет на своих местах.</p>
+        <div class="skeleton" aria-hidden="true"></div><div class="skeleton short" aria-hidden="true"></div>
+      </section>
+
+      <section id="error-state" class="state-card" role="alert" hidden>
+        <span class="state-icon"><svg class="icon"><use href="#icon-message"/></svg></span>
+        <h2 id="error-title"></h2>
+        <p id="error-description"></p>
+        <div class="state-actions">
+          <button id="retry-button" class="primary-button" type="button" hidden>Попробовать ещё раз<svg class="icon"><use href="#icon-arrow"/></svg></button>
+          <a id="demo-link" class="secondary-link" href="?demo=1" hidden>Посмотреть пример разбора<svg class="icon"><use href="#icon-arrow"/></svg></a>
+        </div>
+      </section>
+
+      <section id="feedback" aria-label="Сохранённый разбор" hidden>
+        <div class="tabs" role="tablist" aria-label="Разделы разбора">
+          <button id="corrections-tab" class="tab" role="tab" type="button" aria-selected="true" aria-controls="corrections-panel">
+            <svg class="icon"><use href="#icon-spark"/></svg>Исправления<span id="corrections-count" class="count">0</span>
+          </button>
+          <button id="reply-tab" class="tab" role="tab" type="button" aria-selected="false" aria-controls="reply-panel" tabindex="-1">
+            <svg class="icon"><use href="#icon-message"/></svg>Ответ бота
+          </button>
+        </div>
+
+        <section id="corrections-panel" role="tabpanel" aria-labelledby="corrections-tab" tabindex="0">
+          <div class="section-heading"><h2>Как сказать точнее</h2><span id="corrections-caption"></span></div>
+          <div id="correction-list" class="correction-list"></div>
+          <div id="empty-state" class="empty-card" hidden>
+            <span class="success-mark"><svg class="icon"><use href="#icon-check"/></svg></span>
+            <h3>В этом сообщении нет исправлений</h3>
+            <p>Модель не предложила правок. Продолжай разговор —<br>практика помогает говорить свободнее.</p>
+          </div>
+          <p class="review-note"><svg class="icon"><use href="#icon-info"/></svg>Разбор подготовлен ИИ. Если правило кажется спорным, уточни его у преподавателя или в справочнике.</p>
+        </section>
+
+        <section id="reply-panel" role="tabpanel" aria-labelledby="reply-tab" tabindex="0" hidden>
+          <div class="section-heading"><h2>Продолжаем разговор</h2><span>ПО-ЧЕШСКИ</span></div>
+          <article class="reply-card"><span class="reply-label"><span class="status-dot"></span>CZECH VOICE TUTOR</span><p id="reply-text" lang="cs"></p></article>
+        </section>
+
+        <aside id="note-card" class="note-card" hidden><span class="note-mark" aria-hidden="true">i</span><div><h2>Небольшая подсказка</h2><p id="note-text"></p></div></aside>
+      </section>
+
+      <noscript><div class="state-card"><h2>Нужен JavaScript</h2><p>Для загрузки разбора открой страницу в Telegram с включённым JavaScript.</p></div></noscript>
+    </main>
+
+    <footer class="footer"><span class="footer-line"></span><span>Понемногу. Каждый день. <span lang="cs">Česky.</span></span><span class="footer-line"></span></footer>
+  </div>
+
+  <template id="correction-template">
+    <article class="correction-card">
+      <div class="correction-heading"><span class="correction-number"></span><span>Точнее будет так</span><svg class="icon"><use href="#icon-check"/></svg></div>
+      <div class="comparison">
+        <div class="phrase original"><span class="phrase-label">БЫЛО</span><p lang="cs"></p></div>
+        <svg class="icon comparison-arrow" aria-hidden="true"><use href="#icon-arrow"/></svg>
+        <div class="phrase corrected"><span class="phrase-label">ЛУЧШЕ</span><p lang="cs"></p></div>
+      </div>
+      <div class="explanation"><span class="explanation-label">Почему так</span><p></p></div>
+    </article>
+  </template>
+</body>
+</html>
