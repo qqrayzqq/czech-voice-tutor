@@ -4,3 +4,7 @@ class LLMError(RuntimeError):
 
 class StorageError(RuntimeError):
     """Conversation data could not be stored."""
+
+
+class MiniAppAuthError(ValueError):
+    """Mini App identity, access or authentication time is invalid."""
