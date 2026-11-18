@@ -13,6 +13,18 @@ async def reserve_user_message(
     telegram_message_id: int,
     text: str,
 ) -> int | None:
+    """Reserve one Telegram input within the caller's transaction.
+
+    The identity is (telegram_chat_id, telegram_message_id), not the text or
+    Telegram update_id. A new input starts as processing and returns its
+    database ID. A conflict returns None regardless of the existing input's
+    processing, completed, or failed status; it never reclaims that input.
+    Sending the same text with a new Telegram message ID is a separate input.
+
+    The database unique constraint arbitrates concurrent reservations. This
+    function does not commit: the caller must commit before calling the LLM.
+    Rolling back the transaction also rolls back a newly inserted reservation.
+    """
     statement = (
         insert(Message)
         .values(
@@ -36,17 +48,30 @@ async def reserve_user_message(
     return result.scalar_one_or_none()
 
 
+async def get_tutor_reply(
+    session: AsyncSession,
+    source_message_id: int,
+) -> Message | None:
+    """Find a saved reply to the source input without changing any rows."""
+    statement = select(Message).where(Message.reply_to_message_id == source_message_id)
+    result = await session.execute(statement)
+    return result.scalar_one_or_none()
+
+
 async def save_tutor_reply(
     session: AsyncSession,
     source_message_id: int,
     reply: TutorReply,
 ) -> Message:
-    """Save a generated reply within the caller's transaction."""
-    source = await session.get(Message, source_message_id)
+    """Lock the source input, then return or save its reply in this transaction."""
+    source = await session.get(Message, source_message_id, with_for_update=True)
     if source is None:
         raise ValueError("Source message not found.")
     if source.role != "user":
         raise ValueError("Source message must have role 'user'.")
+    existing_reply = await get_tutor_reply(session, source_message_id)
+    if existing_reply is not None:
+        return existing_reply
     if source.generation_status != "processing":
         raise ValueError("Source message must be processing.")
 
