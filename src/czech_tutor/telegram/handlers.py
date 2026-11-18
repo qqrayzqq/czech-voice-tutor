@@ -53,10 +53,19 @@ def create_router(
                 message.text,
             )
         except (LLMError, StorageError):
-            await message.answer(
-                "Сейчас не удалось получить ответ. Попробуй чуть позже.",
-                parse_mode=None,
-            )
+            try:
+                await message.answer(
+                    "Сейчас не удалось получить ответ. Попробуй чуть позже.",
+                    parse_mode=None,
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to send Telegram error notification: "
+                    "telegram_chat_id=%s telegram_message_id=%s",
+                    message.chat.id,
+                    message.message_id,
+                )
+                raise
             return
 
         if answer is None:
@@ -66,15 +75,26 @@ def create_router(
             mini_app_url,
             answer.reply_id,
             answer.corrections_count,
+            answer.has_note,
         )
-        sent = await message.answer(
-            answer.reply_cs,
-            parse_mode=None,
-            reply_markup=keyboard,
-        )
+        try:
+            sent = await message.answer(
+                answer.reply_cs,
+                parse_mode=None,
+                reply_markup=keyboard,
+            )
+        except Exception:
+            logger.warning("Failed to send tutor reply: reply_id=%s", answer.reply_id)
+            raise
         try:
             await confirm_reply_sent(answer.reply_id, sent.chat.id, sent.message_id)
         except StorageError:
-            logger.warning("Failed to record Telegram delivery for reply_id=%s", answer.reply_id)
+            logger.warning(
+                "Telegram reply delivery is unconfirmed: reply_id=%s "
+                "telegram_chat_id=%s telegram_message_id=%s",
+                answer.reply_id,
+                sent.chat.id,
+                sent.message_id,
+            )
 
     return router
