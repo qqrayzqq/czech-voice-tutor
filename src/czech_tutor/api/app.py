@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path as FilePath
@@ -22,9 +23,12 @@ from czech_tutor.tutor.errors import StorageError
 from czech_tutor.tutor.feedback_service import load_reply_feedback
 from czech_tutor.tutor.schemas import ReplyFeedback
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    logging.basicConfig(level=logging.WARNING)
     load_dotenv()
     settings = Settings.from_env()
     engine = create_database_engine(settings.database_url)
@@ -67,6 +71,7 @@ def create_app() -> FastAPI:
             async with session_factory() as session:
                 feedback = await load_reply_feedback(session, reply_id, telegram_user_id)
         except (SQLAlchemyError, StorageError):
+            logger.warning("Failed to load reply feedback: reply_id=%s", reply_id)
             raise HTTPException(
                 status_code=503,
                 detail="Feedback is temporarily unavailable.",
