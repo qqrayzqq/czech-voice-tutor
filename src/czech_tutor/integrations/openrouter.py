@@ -74,7 +74,8 @@ def build_request_payload(
             },
         },
     }
-    res["reasoning"] = {"effort": "high"}
+    # Low effort was selected in the paired prompt/latency evaluation.
+    res["reasoning"] = {"effort": "low"}
     res["temperature"] = 0.3
     res["max_tokens"] = 5000
     messages: list[dict[str, str]] = [
