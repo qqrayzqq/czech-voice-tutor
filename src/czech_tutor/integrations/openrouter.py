@@ -12,11 +12,11 @@ def build_request_payload(
     res: dict[str, object] = {}
     res["model"] = "deepseek/deepseek-v4.1-flash-1017"
     res["provider"] = {
-        "only": ["sail-research/fp4"],
-        "allow_fallbacks": True,
+        "only": ["wafer/us"],
+        "allow_fallbacks": False,
         "require_parameters": True,
         # USD per million tokens; headroom for price changes at the selected endpoint.
-        "max_price": {"prompt": 0.20, "completion": 0.30},
+        "max_price": {"prompt": 0.05, "completion": 0.60},
     }
     # Ask the provider for the same contract that Pydantic validates locally.
     res["response_format"] = {
