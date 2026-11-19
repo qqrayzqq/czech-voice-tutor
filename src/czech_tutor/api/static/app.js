@@ -1,11 +1,11 @@
 import { FeedbackError, loadFeedback, parseReplyId } from './feedback-client.mjs';
+import { buildMiniAppLink, initializeMiniApp } from './mini-app-ui.mjs';
 
 const byId = id => document.getElementById(id);
-const telegram = window.Telegram?.WebApp;
+const telegram = initializeMiniApp();
 const demo = new URLSearchParams(window.location.search).get('demo') === '1';
 const tabs = [byId('corrections-tab'), byId('reply-tab')];
 const panels = [byId('corrections-panel'), byId('reply-panel')];
-let manualTheme = null;
 let pending = false;
 
 const demoFeedback = {
@@ -18,13 +18,6 @@ const demoFeedback = {
     { original: 'tři jablko', corrected: 'tři jablka', explanation_ru: 'После tři здесь нужна форма множественного числа: jablka. В сочетании koupil jsem tři jablka это винительный падеж, совпадающий по форме с именительным.' },
   ],
 };
-
-function applyTheme() {
-  const theme = manualTheme || telegram?.colorScheme
-    || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-  document.documentElement.dataset.theme = theme;
-  byId('theme-toggle').setAttribute('aria-label', theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему');
-}
 
 function activateTab(index, focus = false) {
   tabs.forEach((tab, position) => {
@@ -113,19 +106,7 @@ tabs.forEach((tab, index) => {
     activateTab(target, true);
   });
 });
-byId('theme-toggle').addEventListener('click', () => {
-  manualTheme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-  applyTheme();
-});
 byId('retry-button').addEventListener('click', start);
-byId('close-button').addEventListener('click', () => telegram?.close());
 byId('demo-badge').hidden = !demo;
-byId('close-button').hidden = !telegram?.initData;
-if (telegram) {
-  telegram.ready();
-  if (telegram.initData) telegram.expand();
-  telegram.onEvent('themeChanged', applyTheme);
-}
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
-applyTheme();
+byId('profile-link').href = buildMiniAppLink('profile.html', window.location.search);
 start();

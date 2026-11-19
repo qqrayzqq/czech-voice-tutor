@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="no-referrer">
+  <title>Профиль · Czech Voice Tutor</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script type="module" src="./profile.js"></script>
+</head>
+<body>
+  <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="icon-moon" viewBox="0 0 24 24"><path d="M20.5 13.5A8.5 8.5 0 0 1 10.5 3.4a8.5 8.5 0 1 0 10 10.1Z"/></symbol>
+    <symbol id="icon-back" viewBox="0 0 24 24"><path d="M19 12H5m6-6-6 6 6 6"/></symbol>
+    <symbol id="icon-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></symbol>
+    <symbol id="icon-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></symbol>
+    <symbol id="icon-voice" viewBox="0 0 24 24"><path d="M4 10v4m4-7v10m4-13v16m4-13v10m4-7v4"/></symbol>
+  </svg>
+
+  <div class="page-shell">
+    <header class="topbar">
+      <div class="brand" aria-label="Czech Voice Tutor">
+        <span class="brand-mark" aria-hidden="true">č<span></span></span>
+        <span class="brand-name">Czech<span>voice tutor</span></span>
+      </div>
+      <div class="header-actions">
+        <button id="theme-toggle" class="icon-button" type="button" aria-label="Переключить тему"><svg class="icon"><use href="#icon-moon"/></svg></button>
+        <button id="close-button" class="back-button" type="button" hidden><svg class="icon"><use href="#icon-back"/></svg><span>В чат</span></button>
+      </div>
+    </header>
+
+    <nav class="page-nav" aria-label="Разделы приложения">
+      <a id="feedback-link" class="page-nav-link" href="./">Разбор</a>
+      <span class="page-nav-link" aria-current="page">Профиль</span>
+    </nav>
+
+    <main id="main-content" aria-busy="true">
+      <section class="hero profile-hero" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow"><span class="status-dot"></span> ТВОЯ ПРАКТИКА ЧЕШСКОГО</p>
+          <h1 id="page-title">В твоём темпе<span class="title-dot">.</span></h1>
+          <p class="hero-description">Немного о тебе — чтобы разговор<br class="mobile-break"> был ближе к твоему уровню.</p>
+        </div>
+        <div class="profile-art" aria-hidden="true"><svg class="icon"><use href="#icon-user"/></svg><span>ahoj!</span></div>
+      </section>
+
+      <section id="profile-loading" class="state-card" role="status" aria-live="polite">
+        <div class="loading-indicator" aria-hidden="true"><span></span><span></span><span></span></div>
+        <h2>Открываем твой профиль</h2>
+        <p>Сейчас всё будет готово.</p>
+        <div class="skeleton" aria-hidden="true"></div><div class="skeleton short" aria-hidden="true"></div>
+      </section>
+
+      <section id="profile-unavailable" class="state-card" hidden>
+        <span class="state-icon"><svg class="icon"><use href="#icon-user"/></svg></span>
+        <h2>Открой профиль в Telegram</h2>
+        <p>Чтобы загрузить и сохранить свои настройки, открой мини-приложение из чата с ботом. Здесь можно посмотреть пример без сохранения.</p>
+        <div class="state-actions"><a id="profile-demo-link" class="primary-button" href="?demo=1">Посмотреть пример<svg class="icon"><use href="#icon-arrow"/></svg></a></div>
+      </section>
+
+      <section id="profile-load-error" class="state-card" role="alert" hidden>
+        <span class="state-icon"><svg class="icon"><use href="#icon-info"/></svg></span>
+        <h2>Профиль пока недоступен</h2>
+        <p id="profile-load-error-message">Не удалось загрузить настройки. Попробуй ещё раз немного позже.</p>
+        <div class="state-actions"><button id="profile-retry" class="primary-button" type="button">Попробовать ещё раз<svg class="icon"><use href="#icon-arrow"/></svg></button></div>
+      </section>
+
+      <section id="profile-content" aria-label="Настройки профиля" hidden>
+        <div id="profile-demo-notice" class="preview-notice"><svg class="icon" aria-hidden="true"><use href="#icon-info"/></svg><p><strong>Демо профиля</strong><span>Можно попробовать настройки. Настройки бота не изменятся.</span></p></div>
+        <div id="profile-live-notice" class="preview-notice" hidden><svg class="icon" aria-hidden="true"><use href="#icon-info"/></svg><p><strong>Твои настройки</strong><span>Уровень и длина сохраняются. В диалоге начнут учитываться позже.</span></p></div>
+
+        <article class="profile-summary">
+          <span class="profile-avatar" aria-hidden="true"><svg class="icon"><use href="#icon-user"/></svg></span>
+          <div class="profile-identity"><h2>Твой профиль</h2><p>Практика чешского · текстовый диалог</p></div>
+          <span id="current-level" class="level-badge">Уровень не выбран</span>
+        </article>
+
+        <section class="profile-card" aria-label="Уровень чешского">
+          <fieldset id="level-fieldset" aria-describedby="level-help">
+            <legend>Твой уровень чешского</legend>
+            <p id="level-help" class="profile-description">Выбери, как тебе комфортно общаться сейчас. Уровень можно будет изменить в любой момент.</p>
+            <div class="level-grid">
+              <label class="level-option"><input type="radio" name="language_level" value="A1"><span class="level-option-body"><span class="level-option-top"><strong>A1</strong><span class="level-check" aria-hidden="true"><svg class="icon"><use href="#icon-check"/></svg></span></span><span class="level-name">Первые шаги</span><span class="level-description">Знакомые слова и простые фразы</span></span></label>
+              <label class="level-option"><input type="radio" name="language_level" value="A2"><span class="level-option-body"><span class="level-option-top"><strong>A2</strong><span class="level-check" aria-hidden="true"><svg class="icon"><use href="#icon-check"/></svg></span></span><span class="level-name">На каждый день</span><span class="level-description">Разговоры о привычных делах</span></span></label>
+              <label class="level-option"><input type="radio" name="language_level" value="B1"><span class="level-option-body"><span class="level-option-top"><strong>B1</strong><span class="level-check" aria-hidden="true"><svg class="icon"><use href="#icon-check"/></svg></span></span><span class="level-name">Больше свободы</span><span class="level-description">Истории, планы и своё мнение</span></span></label>
+              <label class="level-option"><input type="radio" name="language_level" value="B2"><span class="level-option-body"><span class="level-option-top"><strong>B2</strong><span class="level-check" aria-hidden="true"><svg class="icon"><use href="#icon-check"/></svg></span></span><span class="level-name">Уверенный разговор</span><span class="level-description">Подробные ответы и обсуждения</span></span></label>
+              <label class="level-option"><input type="radio" name="language_level" value="C1"><span class="level-option-body"><span class="level-option-top"><strong>C1</strong><span class="level-check" aria-hidden="true"><svg class="icon"><use href="#icon-check"/></svg></span></span><span class="level-name">Тонкости языка</span><span class="level-description">Сложные темы и оттенки смысла</span></span></label>
+              <label class="level-option"><input type="radio" name="language_level" value="C2"><span class="level-option-body"><span class="level-option-top"><strong>C2</strong><span class="level-check" aria-hidden="true"><svg class="icon"><use href="#icon-check"/></svg></span></span><span class="level-name">Свободное владение</span><span class="level-description">Точная и гибкая речь в разных ситуациях</span></span></label>
+            </div>
+          </fieldset>
+
+          <div class="level-hint"><span class="note-mark" aria-hidden="true">i</span><p id="level-hint">Не уверен в уровне? Выбери ближайший по описанию. Здесь нет экзамена — только ориентир для разговора.</p></div>
+          <p id="level-status" class="preference-status" role="status" aria-live="polite">Нажми на уровень — он выберется сразу.</p>
+          <div id="level-save-error" class="form-message form-error" role="alert" hidden><svg class="icon" aria-hidden="true"><use href="#icon-info"/></svg><div><p>Не удалось подтвердить выбор уровня. Твой выбор остался выделен.</p><button id="level-retry" class="inline-retry" type="button">Попробовать ещё раз</button></div></div>
+        </section>
+
+        <section class="profile-card answer-length-card" aria-label="Длина ответов">
+          <fieldset id="length-fieldset" aria-describedby="length-help">
+            <legend>Длина ответов бота</legend>
+            <p id="length-help" class="profile-description">Как подробно бот будет отвечать по-чешски? Выбор применяется сразу, отдельно от уровня.</p>
+            <div class="length-grid">
+              <label class="level-option"><input type="radio" name="answer_length" value="short" checked><span class="level-option-body length-option-body"><span class="level-option-top"><span class="length-preview" aria-hidden="true"><i></i><i></i></span><span class="level-check" aria-hidden="true"><svg class="icon"><use href="#icon-check"/></svg></span></span><span class="level-name">Короткие</span></span></label>
+              <label class="level-option"><input type="radio" name="answer_length" value="medium"><span class="level-option-body length-option-body"><span class="level-option-top"><span class="length-preview" aria-hidden="true"><i></i><i></i><i></i></span><span class="level-check" aria-hidden="true"><svg class="icon"><use href="#icon-check"/></svg></span></span><span class="level-name">Средние</span></span></label>
+              <label class="level-option"><input type="radio" name="answer_length" value="long"><span class="level-option-body length-option-body"><span class="level-option-top"><span class="length-preview" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="level-check" aria-hidden="true"><svg class="icon"><use href="#icon-check"/></svg></span></span><span class="level-name">Длинные</span></span></label>
+            </div>
+          </fieldset>
+          <div class="level-hint"><span class="note-mark" aria-hidden="true">i</span><p id="length-hint">Коротко и по делу — удобно для живого диалога.</p></div>
+          <p id="length-status" class="preference-status" role="status" aria-live="polite">Сейчас выбраны короткие ответы.</p>
+          <div id="length-save-error" class="form-message form-error" role="alert" hidden><svg class="icon" aria-hidden="true"><use href="#icon-info"/></svg><div><p>Не удалось подтвердить длину ответа. Твой выбор остался выделен.</p><button id="length-retry" class="inline-retry" type="button">Попробовать ещё раз</button></div></div>
+        </section>
+        <section class="profile-card response-mode-card" aria-labelledby="response-mode-title">
+          <div class="response-mode-heading">
+            <span class="response-mode-icon" aria-hidden="true"><svg class="icon"><use href="#icon-voice"/></svg></span>
+            <h2 id="response-mode-title">Формат ответа</h2>
+            <span class="coming-soon-badge">Скоро</span>
+          </div>
+          <label class="response-mode-choice" for="text-response-toggle">
+            <span class="response-mode-copy"><strong id="text-response-label">Только текст</strong><span>Читать ответы вместо голосовых.</span></span>
+            <span class="response-switch">
+              <input id="text-response-toggle" type="checkbox" role="switch" aria-labelledby="text-response-label" aria-describedby="response-mode-help">
+              <span class="response-switch-track" aria-hidden="true"></span>
+            </span>
+          </label>
+          <p id="response-mode-status" class="response-mode-status" role="status" aria-live="polite">В примере выбран голосовой ответ.</p>
+          <p id="response-mode-help" class="response-mode-help">Это пример будущей настройки, он не сохраняется. Голосовой режим ещё в разработке; пока бот отвечает текстом.</p>
+        </section>
+        <p class="profile-footnote">Подстрой разговор под себя.<br>Настройки можно менять независимо.</p>
+      </section>
+
+      <noscript><div class="state-card"><h2>Нужен JavaScript</h2><p>Для открытия профиля включи JavaScript.</p></div></noscript>
+    </main>
+    <footer class="footer"><span class="footer-line"></span><span>Понемногу. Каждый день. <span lang="cs">Česky.</span></span><span class="footer-line"></span></footer>
+  </div>
+</body>
+</html>

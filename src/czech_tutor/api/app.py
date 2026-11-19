@@ -21,7 +21,13 @@ from czech_tutor.persistence.connection import (
 from czech_tutor.telegram.bootstrap import create_dispatcher
 from czech_tutor.tutor.errors import StorageError
 from czech_tutor.tutor.feedback_service import load_reply_feedback
-from czech_tutor.tutor.schemas import ReplyFeedback
+from czech_tutor.tutor.profile_service import load_profile, save_answer_length, save_language_level
+from czech_tutor.tutor.schemas import (
+    ProfileSettings,
+    ReplyFeedback,
+    UpdateAnswerLength,
+    UpdateLanguageLevel,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -92,5 +98,67 @@ def create_app() -> FastAPI:
         dispatcher = request.app.state.dispatcher
         await dispatcher.feed_update(bot, update)
         return {"ok": True}
+
+    @app.get("/api/profile")
+    async def get_profile(
+        request: Request,
+        telegram_user_id: Annotated[int, Depends(get_current_user_id)],
+    ) -> ProfileSettings:
+        """Read saved preferences for the authenticated Mini App user."""
+        session_factory = request.app.state.session_factory
+        try:
+            async with session_factory() as session:
+                profile = await load_profile(session, telegram_user_id)
+        except SQLAlchemyError:
+            logger.warning("Failed to load profile.")
+            raise HTTPException(
+                status_code=503,
+                detail="Profile is temporarily unavailable.",
+            )
+        if profile is None:
+            raise HTTPException(404, detail="Profile not found.")
+        return profile
+
+    @app.patch("/api/profile/language-level")
+    async def patch_language_level(
+        preference: UpdateLanguageLevel,
+        request: Request,
+        telegram_user_id: Annotated[int, Depends(get_current_user_id)],
+    ) -> UpdateLanguageLevel:
+        """Change only the authenticated learner's level and confirm after commit."""
+        session_factory = request.app.state.session_factory
+        try:
+            async with session_factory.begin() as session:
+                saved = await save_language_level(session, telegram_user_id, preference)
+        except SQLAlchemyError:
+            logger.warning("Failed to save profile preference: language_level")
+            raise HTTPException(
+                status_code=503,
+                detail="Profile is temporarily unavailable.",
+            )
+        if saved is None:
+            raise HTTPException(404, detail="Profile not found.")
+        return saved
+
+    @app.patch("/api/profile/answer-length")
+    async def patch_answer_length(
+        preference: UpdateAnswerLength,
+        request: Request,
+        telegram_user_id: Annotated[int, Depends(get_current_user_id)],
+    ) -> UpdateAnswerLength:
+        """Change only answer length and return its value after successful commit."""
+        session_factory = request.app.state.session_factory
+        try:
+            async with session_factory.begin() as session:
+                saved = await save_answer_length(session, telegram_user_id, preference)
+        except SQLAlchemyError:
+            logger.warning("Failed to save profile preference: answer_length")
+            raise HTTPException(
+                status_code=503,
+                detail="Profile is temporarily unavailable.",
+            )
+        if saved is None:
+            raise HTTPException(404, detail="Profile not found.")
+        return saved
 
     return app
