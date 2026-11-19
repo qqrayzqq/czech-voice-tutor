@@ -1,5 +1,7 @@
 """Data contracts for LLM output, Telegram delivery, and Mini App feedback."""
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, field_validator
 
 
@@ -75,6 +77,35 @@ class ReplyFeedback(BaseModel):
     reply_cs: str
     note_ru: str
     corrections: list[Correction]
+
+
+class ProfileSettings(BaseModel):
+    """Saved learner preferences returned by the Mini App profile API.
+
+    Both fields must be supplied from storage rather than filled with DTO
+    defaults. This immutable snapshot has no ORM behavior or persistence logic.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    language_level: Literal["A1", "A2", "B1", "B2", "C1", "C2"] | None
+    answer_length: Literal["short", "medium", "long"]
+
+
+class UpdateLanguageLevel(BaseModel):
+    """Validate an explicit language-level change, rejecting unrelated fields."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    language_level: Literal["A1", "A2", "B1", "B2", "C1", "C2"]
+
+
+class UpdateAnswerLength(BaseModel):
+    """Validate an explicit answer-length change, rejecting unrelated fields."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    answer_length: Literal["short", "medium", "long"]
 
 
 def parse_tutor_reply(raw_text: str) -> TutorReply:
