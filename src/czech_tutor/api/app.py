@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
 
 from czech_tutor.api.dependencies import get_current_user_id, verify_telegram_webhook
+from czech_tutor.api.voice_routes import router as voice_router
 from czech_tutor.config import Settings
 from czech_tutor.persistence.connection import (
     create_database_engine,
@@ -56,6 +57,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     app = FastAPI(lifespan=lifespan)
+    app.include_router(voice_router)
     app.mount(
         "/mini-app",
         StaticFiles(directory=FilePath(__file__).resolve().parent / "static", html=True),
