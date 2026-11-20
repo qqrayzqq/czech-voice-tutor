@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="no-referrer">
+  <title>Правка текста · Czech Voice Tutor</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./voice.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script type="module" src="./voice.js"></script>
+</head>
+<body>
+  <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="icon-moon" viewBox="0 0 24 24"><path d="M20.5 13.5A8.5 8.5 0 0 1 10.5 3.4a8.5 8.5 0 1 0 10 10.1Z"/></symbol>
+    <symbol id="icon-back" viewBox="0 0 24 24"><path d="M19 12H5m6-6-6 6 6 6"/></symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="icon-voice" viewBox="0 0 24 24"><path d="M4 10v4m4-7v10m4-13v16m4-13v10m4-7v4"/></symbol>
+  </svg>
+  <div class="page-shell voice-shell">
+    <header class="topbar">
+      <div class="brand" aria-label="Czech Voice Tutor">
+        <span class="brand-mark" aria-hidden="true">č<span></span></span>
+        <span class="brand-name">Czech<span>voice tutor</span></span>
+      </div>
+      <div class="header-actions">
+        <button id="theme-toggle" class="icon-button" type="button" aria-label="Переключить тему"><svg class="icon" aria-hidden="true"><use href="#icon-moon"/></svg></button>
+        <button id="close-button" class="back-button" type="button" hidden><svg class="icon" aria-hidden="true"><use href="#icon-back"/></svg><span>В чат</span></button>
+      </div>
+    </header>
+    <main id="main-content" aria-busy="true">
+      <section class="hero voice-hero" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow"><span class="status-dot"></span> ГОЛОС → ТЕКСТ</p>
+          <h1 id="page-title">Поправь пару слов<span class="title-dot">.</span></h1>
+          <p class="hero-description">Текст уже здесь. Исправь неточность и сохрани —<br class="mobile-break"> отправку ты подтвердишь в чате.</p>
+        </div>
+      </section>
+      <section id="voice-loading" class="state-card" role="status" aria-live="polite">
+        <div class="loading-indicator" aria-hidden="true"><span></span><span></span><span></span></div>
+        <h2>Открываем твой текст</h2>
+        <p>Скоро можно будет внести правку.</p>
+      </section>
+      <section id="voice-unavailable" class="state-card" hidden>
+        <span class="state-icon" aria-hidden="true"><svg class="icon"><use href="#icon-voice"/></svg></span>
+        <h2>Открой редактор в Telegram</h2>
+        <p>Вернись в чат с ботом и нажми кнопку правки под распознанным текстом.</p>
+      </section>
+      <section id="voice-load-error" class="state-card" role="alert" hidden>
+        <h2>Не удалось открыть текст</h2>
+        <p id="voice-load-error-message"></p>
+        <div class="state-actions"><button id="voice-retry" class="primary-button" type="button">Попробовать ещё раз</button></div>
+      </section>
+      <form id="voice-editor" class="voice-card" aria-label="Правка распознанного текста" hidden>
+        <div class="voice-field-heading">
+          <label for="voice-text">Распознанный текст</label>
+          <span class="voice-language" lang="cs">Česky</span>
+        </div>
+        <p id="voice-text-help" class="voice-field-help">Можно изменить только нужный фрагмент.</p>
+        <textarea id="voice-text" name="text" lang="cs" spellcheck="false" autocorrect="off" autocapitalize="off" autocomplete="off" rows="8" aria-describedby="voice-text-help voice-count voice-limit" disabled></textarea>
+        <div class="voice-field-footer">
+          <p id="voice-limit" class="voice-limit" aria-live="polite"></p>
+          <p id="voice-count" class="voice-count">0 / 2000</p>
+        </div>
+        <p id="voice-save-error" class="form-message form-error" role="alert" hidden></p>
+        <p id="voice-save-status" class="voice-save-status" role="status" aria-live="polite"></p>
+        <div class="voice-actions">
+          <button id="voice-save" class="primary-button" type="submit" disabled>Сохранить текст<svg class="icon" aria-hidden="true"><use href="#icon-check"/></svg></button>
+          <button id="voice-cancel" class="voice-cancel" type="button">Отмена</button>
+        </div>
+        <p class="voice-confirmation-note">После сохранения подтверди отправку в чате.</p>
+      </form>
+      <section id="voice-saved" class="state-card" role="status" aria-live="polite" tabindex="-1" hidden>
+        <span class="success-mark" aria-hidden="true"><svg class="icon"><use href="#icon-check"/></svg></span>
+        <h2>Текст сохранён. Подтверди отправку в чате</h2>
+        <p id="voice-saved-message">Вернись в чат с ботом, чтобы продолжить.</p>
+        <div class="state-actions"><button id="voice-go-chat" class="primary-button" type="button">Вернуться в чат<svg class="icon" aria-hidden="true"><use href="#icon-back"/></svg></button></div>
+      </section>
+      <noscript><div class="state-card"><h2>Нужен JavaScript</h2><p>Для правки текста включи JavaScript и открой редактор из Telegram.</p></div></noscript>
+    </main>
+    <footer class="footer"><span class="footer-line"></span><span>Твой голос. Твои слова. <span lang="cs">Česky.</span></span><span class="footer-line"></span></footer>
+  </div>
+</body>
+</html>

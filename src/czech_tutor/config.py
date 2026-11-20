@@ -16,6 +16,7 @@ class Settings:
     database_url: str = field(repr=False)
     mini_app_url: str | None = None
     webhook_secret: str | None = field(default=None, repr=False)
+    soniox_api_key: str | None = field(default=None, repr=False)
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -58,6 +59,8 @@ class Settings:
                 "TELEGRAM_WEBHOOK_SECRET must contain 1-256 ASCII letters, digits, '_' or '-'."
             )
 
+        soniox_api_key = os.environ.get("SONIOX_API_KEY", "").strip() or None
+
         return cls(
             bot_token=token,
             allowed_user_ids=user_ids,
@@ -65,4 +68,5 @@ class Settings:
             database_url=database_url,
             mini_app_url=mini_app_url,
             webhook_secret=webhook_secret,
+            soniox_api_key=soniox_api_key,
         )

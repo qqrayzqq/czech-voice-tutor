@@ -1,0 +1,33 @@
+.voice-shell { max-width: 740px; }
+.voice-hero { padding-top: 40px; padding-bottom: 29px; }
+.voice-card { padding: 25px; border: 1px solid var(--line); background: var(--surface); border-radius: 18px; box-shadow: var(--shadow); }
+.voice-field-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.voice-field-heading label { font-size: 16px; font-weight: 550; letter-spacing: -.3px; }
+.voice-language { font: italic 14px Georgia, serif; color: var(--green); background: var(--green-soft); padding: 5px 11px; border-radius: 16px; }
+.voice-field-help { font-size: 12px; color: var(--muted); margin: 5px 0 17px; }
+#voice-text { display: block; width: 100%; min-height: 230px; max-height: 65vh; resize: vertical; padding: 17px; border: 1px solid var(--line); border-radius: 12px; background: var(--page); color: var(--ink); font: inherit; font-size: 17px; line-height: 1.8; overflow-wrap: anywhere; }
+#voice-text:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+#voice-text[aria-invalid="true"] { border-color: var(--red); }
+.voice-field-footer { display: flex; align-items: baseline; justify-content: space-between; gap: 15px; min-height: 30px; margin-top: 9px; }
+.voice-limit, .voice-count { color: var(--muted); font-size: 11px; margin: 0; }
+.voice-count { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.voice-field-footer.is-invalid .voice-limit, .voice-field-footer.is-invalid .voice-count { color: var(--red); }
+.voice-save-status { color: var(--green); font-size: 12px; line-height: 1.6; margin: 0; }
+.voice-save-status:not(:empty) { margin-top: 12px; }
+.voice-actions { display: flex; align-items: center; gap: 16px; margin-top: 18px; }
+.voice-cancel { min-height: 46px; padding: 10px 16px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--muted); font-size: 13px; }
+.voice-cancel:hover { color: var(--ink); background: var(--page); }
+.voice-confirmation-note { color: var(--muted); font-size: 11px; line-height: 1.7; margin: 13px 0 0; }
+#voice-saved h2 { max-width: 390px; margin-left: auto; margin-right: auto; }
+#voice-saved p { white-space: pre-line; }
+@media (max-width: 600px) {
+  .voice-hero { padding-top: 31px; padding-bottom: 23px; }
+  .voice-hero h1 { font-size: clamp(25px, 6.8vw, 31px); }
+  .voice-card { padding: 20px 17px; border-radius: 15px; }
+  .voice-field-heading label { font-size: 15px; }
+  #voice-text { min-height: 240px; padding: 13px; font-size: 16px; }
+  .voice-actions { gap: 10px; }
+  .voice-actions .primary-button { flex: 1; padding-left: 14px; padding-right: 14px; gap: 9px; }
+  .voice-cancel { padding-left: 13px; padding-right: 13px; }
+  .voice-field-footer { gap: 10px; }
+}

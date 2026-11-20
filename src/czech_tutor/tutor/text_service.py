@@ -13,6 +13,7 @@ from czech_tutor.persistence.messages import (
 )
 from czech_tutor.persistence.models import User
 from czech_tutor.persistence.users import upsert_user
+from czech_tutor.persistence.voice_jobs import find_voice_edit
 from czech_tutor.tutor.context import trim_history
 from czech_tutor.tutor.errors import InputTooLongError, LLMError, StorageError
 from czech_tutor.tutor.prompts import build_system_prompt
@@ -68,6 +69,10 @@ async def process_text_message(
     try:
         async with session_factory.begin() as session:
             learner: User = await upsert_user(session, telegram_user_id, username)
+            # Both routes serialize on the same user row. A consumed edit can
+            # never also become an ordinary paid conversation input.
+            if await find_voice_edit(session, telegram_chat_id, telegram_message_id) is not None:
+                return None
             language_level: str | None = learner.language_level
             answer_length: str = learner.answer_length
             conversation = await get_or_create_conversation(session, telegram_user_id)

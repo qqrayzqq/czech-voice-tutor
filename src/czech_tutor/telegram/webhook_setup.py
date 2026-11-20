@@ -23,7 +23,7 @@ async def register_webhook(
             url=webhook_url,
             secret_token=settings.webhook_secret,
             max_connections=1,
-            allowed_updates=["message"],
+            allowed_updates=["message", "callback_query"],
         )
     finally:
         await bot.session.close()
