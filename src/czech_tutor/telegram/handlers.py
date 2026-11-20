@@ -7,7 +7,7 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message
 
 from czech_tutor.telegram.keyboards import build_feedback_keyboard
-from czech_tutor.tutor.errors import LLMError, StorageError
+from czech_tutor.tutor.errors import InputTooLongError, LLMError, StorageError
 from czech_tutor.tutor.schemas import ReplyToSend
 
 logger = logging.getLogger(__name__)
@@ -52,6 +52,22 @@ def create_router(
                 message.message_id,
                 message.text,
             )
+        except InputTooLongError as error:
+            try:
+                await message.answer(
+                    "Слишком длинное сообщение. Сейчас можно отправить не больше "
+                    f"{error.max_chars} символов. Сократи текст и отправь снова.",
+                    parse_mode=None,
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to send Telegram input limit notification: "
+                    "telegram_chat_id=%s telegram_message_id=%s",
+                    message.chat.id,
+                    message.message_id,
+                )
+                raise
+            return
         except (LLMError, StorageError):
             try:
                 await message.answer(
