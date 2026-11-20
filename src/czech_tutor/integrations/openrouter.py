@@ -1,7 +1,7 @@
 import httpx
 
 from czech_tutor.tutor.errors import LLMError
-from czech_tutor.tutor.schemas import TutorReply, parse_tutor_reply
+from czech_tutor.tutor.schemas import TutorReply, clean_tutor_reply, parse_tutor_reply
 
 
 def build_request_payload(
@@ -10,13 +10,13 @@ def build_request_payload(
     history: list[tuple[str, str]],
 ) -> dict[str, object]:
     res: dict[str, object] = {}
-    res["model"] = "deepseek/deepseek-v4.1-flash-1017"
+    res["model"] = "openai/gpt-6-luna"
     res["provider"] = {
-        "only": ["wafer/us"],
+        "only": ["amazon-bedrock/global"],
         "allow_fallbacks": False,
         "require_parameters": True,
-        # USD per million tokens; headroom for price changes at the selected endpoint.
-        "max_price": {"prompt": 0.05, "completion": 0.60},
+        # USD per million base input/output tokens; cache pricing is separate.
+        "max_price": {"prompt": 0.10, "completion": 0.50},
     }
     # Ask the provider for the same contract that Pydantic validates locally.
     res["response_format"] = {
@@ -29,8 +29,10 @@ def build_request_payload(
                 "properties": {
                     "reply_cs": {
                         "type": "string",
+                        "pattern": r"\S",
                         "description": (
-                            "Only Czech dialogue or a corrected Czech example; no grammar lecture."
+                            "Required non-blank Czech answer, including when the requested "
+                            "Russian explanation is in note_ru; no grammar lecture."
                         ),
                     },
                     "note_ru": {
@@ -42,6 +44,9 @@ def build_request_payload(
                     },
                     "corrections": {
                         "type": "array",
+                        "description": (
+                            "Minimal local non-diacritic edits; never a full rewritten input."
+                        ),
                         "items": {
                             "type": "object",
                             "properties": {
@@ -68,15 +73,29 @@ def build_request_payload(
                             "additionalProperties": False,
                         },
                     },
+                    "diacritics": {
+                        "type": "array",
+                        "description": (
+                            "Short accent-restoration pairs; distant changes stay separate."
+                        ),
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "original": {"type": "string"},
+                                "corrected": {"type": "string"},
+                            },
+                            "required": ["original", "corrected"],
+                            "additionalProperties": False,
+                        },
+                    },
                 },
-                "required": ["reply_cs", "note_ru", "corrections"],
+                "required": ["reply_cs", "note_ru", "corrections", "diacritics"],
                 "additionalProperties": False,
             },
         },
     }
-    # Low effort was selected in the paired prompt/latency evaluation.
+    # Low reasoning effort was selected in the completed model evaluation.
     res["reasoning"] = {"effort": "low"}
-    res["temperature"] = 0.3
     res["max_tokens"] = 5000
     messages: list[dict[str, str]] = [
         {
@@ -102,7 +121,10 @@ async def send_request(
         "Authorization": "Bearer " + api_key,
     }
     response = await client.post(
-        "https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=30.0
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers=headers,
+        json=payload,
+        timeout=30.0,
     )
     response.raise_for_status()
     return response
@@ -134,6 +156,6 @@ async def generate_reply(
         response = await send_request(client, api_key, payload)
         raw_text = extract_reply(response)
         tutor_reply = parse_tutor_reply(raw_text)
-        return tutor_reply
+        return clean_tutor_reply(tutor_reply, user_text)
     except (httpx.HTTPError, ValueError) as error:
         raise LLMError("Failed to generate a tutor reply.") from error

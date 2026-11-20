@@ -11,14 +11,16 @@ from czech_tutor.persistence.messages import (
     mark_generation_failed,
     reserve_user_message,
 )
+from czech_tutor.persistence.models import User
 from czech_tutor.persistence.users import upsert_user
 from czech_tutor.tutor.context import trim_history
-from czech_tutor.tutor.errors import LLMError, StorageError
-from czech_tutor.tutor.prompts import SYSTEM_PROMPT
+from czech_tutor.tutor.errors import InputTooLongError, LLMError, StorageError
+from czech_tutor.tutor.prompts import build_system_prompt
 from czech_tutor.tutor.reply_storage_service import reply_storage
 from czech_tutor.tutor.schemas import ReplyToSend
 
 logger = logging.getLogger(__name__)
+MAX_INPUT_CHARS = 2000
 
 
 async def process_text_message(
@@ -33,14 +35,21 @@ async def process_text_message(
 ) -> ReplyToSend | None:
     """Generate and save a reply for one previously unreserved Telegram input.
 
+    Input longer than MAX_INPUT_CHARS raises InputTooLongError before opening
+    a database transaction or calling the LLM. All Python string characters,
+    including spaces and newlines, count toward the limit; input is not trimmed.
+
     The Telegram handler is responsible for access checks. The first short
-    transaction prepares the user, conversation, reservation, and history.
+    transaction prepares the user, conversation, reservation, and history,
+    and copies the learner's saved level and answer length into plain values.
     Only a committed new reservation may proceed to generation; a conflict on
     (telegram_chat_id, telegram_message_id) returns None without loading
     history, calling the LLM, or saving or returning a reply. Existing inputs
     are skipped in processing, completed, and failed states alike.
 
-    Generation runs outside database transactions. An LLMError triggers a
+    The prompt uses that preference snapshot; no ORM attribute access is
+    needed after the initial transaction. Generation runs outside database
+    transactions. An LLMError triggers a
     separate transaction to mark the input failed before the error propagates.
     The storage service saves the reply and completed status, retrying only
     recognized connection failures without regenerating the reply. ReplyToSend
@@ -53,9 +62,14 @@ async def process_text_message(
     as StorageError, and reply validation failures during saving are wrapped
     in StorageError as well.
     """
+    if len(text) > MAX_INPUT_CHARS:
+        raise InputTooLongError(max_chars=MAX_INPUT_CHARS)
+
     try:
         async with session_factory.begin() as session:
-            await upsert_user(session, telegram_user_id, username)
+            learner: User = await upsert_user(session, telegram_user_id, username)
+            language_level: str | None = learner.language_level
+            answer_length: str = learner.answer_length
             conversation = await get_or_create_conversation(session, telegram_user_id)
             message_id = await reserve_user_message(
                 session,
@@ -79,9 +93,10 @@ async def process_text_message(
         return None
 
     history = trim_history(history_texts)
+    system_prompt = build_system_prompt(language_level, answer_length)
 
     try:
-        result = await generate_reply(client, api_key, text, SYSTEM_PROMPT, history)
+        result = await generate_reply(client, api_key, text, system_prompt, history)
     except LLMError:
         logger.warning("Failed to generate tutor reply: source_message_id=%s", message_id)
         try:
@@ -100,6 +115,6 @@ async def process_text_message(
     return ReplyToSend(
         reply_id=reply.id,
         reply_cs=reply.text,
-        corrections_count=len(result.corrections),
+        corrections_count=len(result.corrections) + int(bool(result.diacritics)),
         has_note=bool(reply.note_ru and reply.note_ru.strip()),
     )
