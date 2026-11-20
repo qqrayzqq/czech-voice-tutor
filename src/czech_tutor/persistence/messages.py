@@ -3,7 +3,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from czech_tutor.persistence.models import Message, MessageCorrection
-from czech_tutor.tutor.schemas import TutorReply
+from czech_tutor.tutor.schemas import TutorReply, build_diacritics_correction
 
 
 async def reserve_user_message(
@@ -91,6 +91,17 @@ async def save_tutor_reply(
                 original=correction.original,
                 corrected=correction.corrected,
                 explanation_ru=correction.explanation_ru,
+            )
+        )
+
+    diacritics = build_diacritics_correction(reply.diacritics)
+    if diacritics is not None:
+        session.add(
+            MessageCorrection(
+                message_id=source.id,
+                original=diacritics.original,
+                corrected=diacritics.corrected,
+                explanation_ru=diacritics.explanation_ru,
             )
         )
 
