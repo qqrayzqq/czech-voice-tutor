@@ -5,16 +5,17 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from io import BytesIO
 
-from aiogram import F, Router
-from aiogram.exceptions import TelegramAPIError
+from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, Message
 
 from czech_tutor.telegram.keyboards import (
-    build_voice_confirmation_keyboard,
     build_voice_status_keyboard,
 )
-from czech_tutor.telegram.reply_sender import SpeechActions, send_tutor_reply
+from czech_tutor.telegram.localization import ui
+from czech_tutor.telegram.reply_sender import NoticeActions, SpeechActions, send_tutor_reply
+from czech_tutor.telegram.voice_cards import MissingVoiceCard, render_voice_card
 from czech_tutor.tutor.errors import (
     ActiveVoiceJobError,
     ASRError,
@@ -25,7 +26,6 @@ from czech_tutor.tutor.errors import (
 from czech_tutor.tutor.voice_schemas import (
     MAX_VOICE_BYTES,
     MAX_VOICE_SECONDS,
-    MAX_VOICE_TEXT_CHARS,
     EmptyVoiceTextError,
     VoiceInput,
     VoiceReply,
@@ -43,6 +43,16 @@ class VoiceActions:
     confirm: Callable[[int, int, int, bool], Awaitable[VoiceReply | None]]
     cancel: Callable[[int, int, int], Awaitable[bool]]
     release_reply: Callable[[int, int, str], Awaitable[None]]
+    confirm_with_cleanup: (
+        Callable[[int, int, int, bool, Callable[[], Awaitable[None]]], Awaitable[VoiceReply | None]]
+        | None
+    ) = None
+    advance: Callable[[int, VoiceInput], Awaitable[VoiceReply | None]] | None = None
+    remember_card: Callable[[int, int, int, str | None], Awaitable[bool]] | None = None
+    claim_card: Callable[..., Awaitable[str | None]] | None = None
+    release_card: Callable[[int, int, str], Awaitable[bool]] | None = None
+    reconcile_card: Callable[[Bot, int, int], Awaitable[bool]] | None = None
+    obsolete_cards: Callable[[int], Awaitable[list[int]]] | None = None
 
 
 class _VoiceFileTooLarge(ValueError):
@@ -56,128 +66,135 @@ class _LimitedBuffer(BytesIO):
         return super().write(data)
 
 
-def voice_confirmation_text(text: str) -> str:
-    return f"🎤 Распознанный текст:\n«{text}»\n\nОтправить репетитору или исправить?"
+def voice_confirmation_text(text: str, language: str = "ru") -> str:
+    return ui("confirmation", language, text=text)
 
 
 async def present_voice_input(
     message: Message,
     voice: VoiceInput | None,
     mini_app_url: str | None = None,
+    *,
+    remember_card: Callable[[int, int, int, str | None], Awaitable[bool]] | None = None,
+    owner_id: int | None = None,
+    claim_card: Callable[..., Awaitable[str | None]] | None = None,
+    release_card: Callable[[int, int, str], Awaitable[bool]] | None = None,
+    reconcile_card: Callable[[Bot, int, int], Awaitable[bool]] | None = None,
+    language: str = "ru",
+    allow_replacement: bool = False,
 ) -> None:
-    keyboard = None
-    if voice is None:
-        text = "Нет доступного голосового сообщения. Можно записать новое."
-    elif voice.status in {"received", "transcribing"}:
-        text = "🎤 Голосовое ещё распознаётся. Проверь немного позже или отмени его."
-        keyboard = build_voice_status_keyboard(voice.job_id, voice.revision)
-    elif voice.status == "awaiting_confirmation":
-        transcript = voice.text or ""
-        valid = bool(transcript.strip()) and len(transcript) <= MAX_VOICE_TEXT_CHARS
-        preview = transcript[:MAX_VOICE_TEXT_CHARS]
-        if valid:
-            text = voice_confirmation_text(preview)
-        elif len(transcript) > MAX_VOICE_TEXT_CHARS:
-            text = (
-                f"🎤 Начало распознанного текста:\n«{preview}…»\n\n"
-                f"Текст слишком длинный. Сократи его до {MAX_VOICE_TEXT_CHARS} символов "
-                "через «Изменить» или отмени голосовое."
-            )
+    text, keyboard = render_voice_card(voice, mini_app_url, language)
+    missing_card_state: VoiceInput | None = None
+    if (
+        voice is not None
+        and voice.card_message_id
+        and voice.card_message_id > 0
+        and reconcile_card is not None
+        and owner_id is not None
+    ):
+        try:
+            if await reconcile_card(message.bot, owner_id, voice.job_id):
+                return
+        except MissingVoiceCard as exc:
+            if not allow_replacement:
+                return
+            missing_card_state = exc.state
         else:
-            text = "Не удалось получить текст. Нажми «Изменить» и введи его или отмени голосовое."
-        keyboard = build_voice_confirmation_keyboard(
-            voice.job_id,
-            voice.revision,
-            can_confirm=valid,
-            mini_app_url=mini_app_url,
-        )
-    elif voice.status == "awaiting_edit":
-        transcript = voice.text or ""
-        preview = transcript[:MAX_VOICE_TEXT_CHARS]
-        if voice.failure_reason == "empty":
-            explanation = (
-                "Не удалось распознать речь. Можно ввести текст или отменить голосовое.\n\n"
+            return
+    if voice is not None and voice.card_message_id == 0:
+        if not allow_replacement:
+            return
+        if voice.card_lease_active:
+            await message.answer(ui("card_in_flight", language), parse_mode=None)
+            return
+    if (
+        voice is not None
+        and voice.card_message_id
+        and voice.card_message_id > 0
+        and missing_card_state is None
+    ):
+        try:
+            await message.bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=voice.card_message_id,
+                text=text,
+                parse_mode=None,
+                reply_markup=keyboard,
             )
-        elif voice.failure_reason == "too_long":
-            explanation = (
-                f"🎤 Начало распознанного текста:\n«{preview}…»\n\n"
-                "Текст слишком длинный. Сократи его или напиши заново.\n\n"
-            )
-        elif transcript:
-            suffix = "…" if len(transcript) > MAX_VOICE_TEXT_CHARS else ""
-            explanation = f"🎤 Текущий текст:\n«{preview}{suffix}»\n\n"
+        except TelegramAPIError as error:
+            err_str = str(error).lower()
+            if allow_replacement and "message to edit not found" in err_str:
+                missing_card_state = voice
+            else:
+                if "message is not modified" not in err_str:
+                    logger.warning("Failed to update voice card: job_id=%s", voice.job_id)
+                return
         else:
-            explanation = ""
-        instruction = (
-            "✏️ Нажми «Изменить»: текст в редакторе уже заполнен. "
-            "Поправь нужный фрагмент и сохрани. После этого подтверди отправку в чате."
-            if mini_app_url
-            else "✏️ Редактор пока не подключён. Скопируй текущий текст, исправь нужный фрагмент "
-            "и отправь обычным сообщением. "
-            f"Не больше {MAX_VOICE_TEXT_CHARS} символов. После этого подтверди отправку. "
-            "Вернуться к голосовому можно через /voice."
+            return
+
+    target_voice = missing_card_state if missing_card_state is not None else voice
+    if target_voice is not None:
+        text, keyboard = render_voice_card(target_voice, mini_app_url, language)
+
+    token: str | None = None
+    if target_voice is not None and claim_card is not None and owner_id is not None:
+        expected_id = target_voice.card_message_id
+        token = await claim_card(
+            owner_id,
+            target_voice.job_id,
+            expected_id,
+            allow_recovery=allow_replacement,
         )
-        text = explanation + instruction
-        keyboard = build_voice_status_keyboard(
-            voice.job_id,
-            voice.revision,
-            awaiting_edit=True,
-            mini_app_url=mini_app_url,
+        if token is None:
+            return
+
+    try:
+        sent = await message.answer(text, parse_mode=None, reply_markup=keyboard)
+    except TelegramAPIError as error:
+        logger.warning(
+            "Failed to send voice card: job_id=%s error=%s",
+            getattr(target_voice, "job_id", None),
+            error,
         )
-    elif voice.status == "confirmed":
-        if voice.can_recover_reply:
-            text = "Ответ репетитора сохранён. Нажми «Получить ответ», чтобы получить его."
-            keyboard = build_voice_status_keyboard(voice.job_id, voice.revision, recover=True)
-        elif voice.failure_reason in {
-            "generation_failed",
-            "generation_interrupted",
-            "reply_unavailable",
-        }:
-            text = (
-                "Не удалось получить ответ репетитора на это голосовое. "
-                "Чтобы попробовать ещё раз, отправь новое сообщение."
-            )
-        else:
-            text = (
-                "Голосовое уже подтверждено. Ответ отправлен или ещё готовится. "
-                "Если он не появился, проверь /voice немного позже."
-            )
-    elif voice.status == "cancelled":
-        text = "Голосовое сообщение отменено. Можно записать новое."
-    else:
-        text = "Не удалось обработать это голосовое. Можно записать новое."
-    if voice is not None and voice.pending_replies:
-        rows = [list(row) for row in keyboard.inline_keyboard] if keyboard is not None else []
-        for pending in voice.pending_replies:
-            preview = " ".join(pending.preview.split())[:32]
-            rows.append(
-                [
-                    InlineKeyboardButton(
-                        text=f"📩 Ответ: {preview}" if preview else "📩 Сохранённый ответ",
-                        callback_data=f"voice:recover:{pending.job_id}:{pending.revision}",
-                    )
-                ]
-            )
-        keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
-        text += "\n\nНиже также доступны сохранённые ответы на прежние голосовые."
-    await message.answer(text, parse_mode=None, reply_markup=keyboard)
+        if (
+            target_voice is not None
+            and release_card is not None
+            and owner_id is not None
+            and token is not None
+            and isinstance(error, (TelegramForbiddenError, TelegramBadRequest))
+        ):
+            try:
+                await release_card(owner_id, target_voice.job_id, token)
+            except Exception:
+                pass
+        return
+
+    if (
+        target_voice is not None
+        and remember_card is not None
+        and owner_id is not None
+        and token is not None
+    ):
+        try:
+            recorded = await remember_card(owner_id, target_voice.job_id, sent.message_id, token)
+            if recorded and reconcile_card is not None:
+                try:
+                    await reconcile_card(message.bot, owner_id, target_voice.job_id)
+                except MissingVoiceCard:
+                    pass
+        except StorageError:
+            logger.warning("Failed to record voice card: job_id=%s", target_voice.job_id)
 
 
-async def _voice_error(message: Message, error: Exception) -> None:
+async def _voice_error(message: Message, error: Exception, language: str = "ru") -> None:
     if isinstance(error, InputTooLongError):
-        text = (
-            f"Слишком длинный текст. Пришли не больше {error.max_chars} символов. "
-            "Вернуться к голосовому можно через /voice."
-        )
+        text = ui("input_limit", language, max_chars=error.max_chars)
     elif isinstance(error, EmptyVoiceTextError):
-        text = "Текст не должен быть пустым. Исправь его через /voice."
+        text = ui("empty_text", language)
     elif isinstance(error, ASRError):
-        text = (
-            "Не удалось распознать голосовое сообщение. Проверь /voice чуть позже "
-            "или запиши новое, если обработка завершилась."
-        )
+        text = ui("asr_error", language)
     else:
-        text = "Сейчас не удалось обработать голосовое. Попробуй чуть позже через /voice."
+        text = ui("voice_error", language)
     await message.answer(text, parse_mode=None)
 
 
@@ -188,6 +205,25 @@ async def _remove_markup(message: Message) -> None:
         logger.warning("Failed to remove voice buttons: telegram_message_id=%s", message.message_id)
 
 
+async def clear_obsolete_controls(
+    message: Message, user_id: int, actions: VoiceActions | None
+) -> None:
+    lookup = getattr(actions, "obsolete_cards", None)
+    if lookup is None:
+        return
+    try:
+        ids = await lookup(user_id)
+        for message_id in ids:
+            try:
+                await message.bot.edit_message_reply_markup(
+                    chat_id=message.chat.id, message_id=message_id, reply_markup=None
+                )
+            except TelegramAPIError:
+                pass
+    except StorageError:
+        logger.warning("Failed to find obsolete voice controls: telegram_user_id=%s", user_id)
+
+
 async def _send_voice_reply(
     message: Message,
     user_id: int,
@@ -196,10 +232,14 @@ async def _send_voice_reply(
     confirm_reply_sent: Callable[[int, int, int], Awaitable[None]],
     mini_app_url: str | None,
     speech_actions: SpeechActions | None = None,
+    notice_actions: NoticeActions | None = None,
 ) -> None:
     answer = result.reply
+    await clear_obsolete_controls(message, user_id, actions)
     try:
-        sent = await send_tutor_reply(message, user_id, answer, mini_app_url, speech_actions)
+        sent = await send_tutor_reply(
+            message, user_id, answer, mini_app_url, speech_actions, notice_actions
+        )
     except Exception:
         logger.warning("Failed to send saved voice reply: reply_id=%s", answer.reply_id)
         try:
@@ -208,11 +248,10 @@ async def _send_voice_reply(
             logger.warning("Failed to release voice reply delivery: job_id=%s", result.job_id)
         try:
             await message.answer(
-                "Не удалось отправить ответ. Он сохранён: нажми «Получить ответ». "
-                "Вернуться к текущему голосовому можно через /voice.",
+                ui("delivery_error", answer.interface_language),
                 parse_mode=None,
                 reply_markup=build_voice_status_keyboard(
-                    result.job_id, result.revision, recover=True
+                    result.job_id, result.revision, recover=True, language=answer.interface_language
                 ),
             )
         except Exception:
@@ -225,6 +264,18 @@ async def _send_voice_reply(
     except StorageError:
         logger.warning("Telegram voice reply delivery is unconfirmed: reply_id=%s", answer.reply_id)
 
+    if result.fallback_input is not None:
+        await present_voice_input(
+            message,
+            result.fallback_input,
+            mini_app_url,
+            remember_card=getattr(actions, "remember_card", None),
+            claim_card=getattr(actions, "claim_card", None),
+            release_card=getattr(actions, "release_card", None),
+            reconcile_card=getattr(actions, "reconcile_card", None),
+            owner_id=user_id,
+        )
+
 
 def register_voice_handlers(
     router: Router,
@@ -232,11 +283,49 @@ def register_voice_handlers(
     confirm_reply_sent: Callable[[int, int, int], Awaitable[None]],
     mini_app_url: str | None,
     speech_actions: SpeechActions | None = None,
+    load_language: Callable[[int], Awaitable[str]] | None = None,
+    notice_actions: NoticeActions | None = None,
 ) -> None:
-    async def not_connected(message: Message) -> None:
-        await message.answer(
-            "Голосовые пока не подключены. Пришли текст для практики чешского.", parse_mode=None
+    async def locale(user_id: int) -> str:
+        return await load_language(user_id) if load_language else "ru"
+
+    async def present(
+        message: Message, voice: VoiceInput | None, user_id: int, *, restore: bool = False
+    ) -> None:
+        if (
+            voice is not None
+            and voice.status == "awaiting_confirmation"
+            and voice.revision == 0
+            and getattr(actions, "advance", None) is not None
+        ):
+            result = await actions.advance(user_id, voice)
+            if result is not None:
+                await _send_voice_reply(
+                    message,
+                    user_id,
+                    result,
+                    actions,
+                    confirm_reply_sent,
+                    mini_app_url,
+                    speech_actions,
+                    notice_actions,
+                )
+            return
+        await present_voice_input(
+            message,
+            voice,
+            mini_app_url,
+            remember_card=getattr(actions, "remember_card", None),
+            claim_card=getattr(actions, "claim_card", None),
+            release_card=getattr(actions, "release_card", None),
+            reconcile_card=getattr(actions, "reconcile_card", None),
+            owner_id=user_id,
+            language=await locale(user_id),
+            allow_replacement=restore,
         )
+
+    async def not_connected(message: Message) -> None:
+        await message.answer(ui("not_connected", await locale(message.chat.id)), parse_mode=None)
 
     @router.message(Command("voice"))
     async def restore_voice(message: Message) -> None:
@@ -246,11 +335,14 @@ def register_voice_handlers(
             await not_connected(message)
             return
         try:
-            await present_voice_input(
-                message, await actions.load(message.from_user.id, None), mini_app_url
+            await present(
+                message,
+                await actions.load(message.from_user.id, None),
+                message.from_user.id,
+                restore=True,
             )
-        except (ASRError, StorageError) as error:
-            await _voice_error(message, error)
+        except (ASRError, StorageError, LLMError) as error:
+            await _voice_error(message, error, await locale(message.chat.id))
 
     @router.message(F.voice)
     async def handle_voice(message: Message) -> None:
@@ -261,32 +353,28 @@ def register_voice_handlers(
             return
         if message.voice.duration > MAX_VOICE_SECONDS:
             await message.answer(
-                "Голосовое слишком длинное. Запиши не больше 2 минут.", parse_mode=None
+                ui("duration", await locale(message.from_user.id)), parse_mode=None
             )
             return
         if message.voice.file_size is not None and message.voice.file_size > MAX_VOICE_BYTES:
-            await message.answer(
-                "Размер голосового слишком большой. Максимум — 5 МБ.", parse_mode=None
-            )
+            await message.answer(ui("size", await locale(message.from_user.id)), parse_mode=None)
             return
         try:
             with _LimitedBuffer() as buffer:
                 await message.bot.download(message.voice.file_id, destination=buffer)
                 audio_bytes = buffer.getvalue()
         except _VoiceFileTooLarge:
-            await message.answer(
-                "Размер голосового слишком большой. Максимум — 5 МБ.", parse_mode=None
-            )
+            await message.answer(ui("size", await locale(message.from_user.id)), parse_mode=None)
             return
         except Exception:
             logger.warning("Failed to download voice: telegram_message_id=%s", message.message_id)
             await message.answer(
-                "Не удалось загрузить аудио из Telegram. Попробуй ещё раз.", parse_mode=None
+                ui("download", await locale(message.from_user.id)), parse_mode=None
             )
             return
         if not audio_bytes:
             await message.answer(
-                "В голосовом нет аудио. Попробуй записать ещё раз.", parse_mode=None
+                ui("no_audio", await locale(message.from_user.id)), parse_mode=None
             )
             return
         try:
@@ -298,20 +386,18 @@ def register_voice_handlers(
                 message.voice.file_id,
                 audio_bytes,
             )
-            if voice is not None:
-                await present_voice_input(message, voice, mini_app_url)
+            if voice is not None and voice.status != "confirmed":
+                await present(message, voice, message.from_user.id)
         except ActiveVoiceJobError:
-            await message.answer(
-                "У тебя уже есть активное голосовое сообщение. Вернёмся к нему.", parse_mode=None
-            )
+            await message.answer(ui("active", await locale(message.from_user.id)), parse_mode=None)
             try:
-                await present_voice_input(
-                    message, await actions.load(message.from_user.id, None), mini_app_url
+                await present(
+                    message, await actions.load(message.from_user.id, None), message.from_user.id
                 )
-            except (ASRError, StorageError) as error:
-                await _voice_error(message, error)
-        except (ASRError, StorageError, InputTooLongError, EmptyVoiceTextError) as error:
-            await _voice_error(message, error)
+            except (ASRError, StorageError, LLMError) as error:
+                await _voice_error(message, error, await locale(message.chat.id))
+        except (ASRError, StorageError, LLMError, InputTooLongError, EmptyVoiceTextError) as error:
+            await _voice_error(message, error, await locale(message.chat.id))
 
     @router.callback_query(F.data.startswith("voice:"))
     async def handle_voice_callback(callback: CallbackQuery) -> None:
@@ -339,29 +425,60 @@ def register_voice_handlers(
             return
         try:
             if action == "check":
-                await present_voice_input(
+                await present(
                     message,
                     await actions.load(callback.from_user.id, job_id),
-                    mini_app_url,
+                    callback.from_user.id,
                 )
                 return
             if action == "edit":
                 voice = await actions.request_edit(callback.from_user.id, job_id, revision)
                 if voice is not None:
                     await _remove_markup(message)
-                    await present_voice_input(message, voice, mini_app_url)
+                    await present(message, voice, callback.from_user.id)
                     return
             elif action == "cancel":
                 if await actions.cancel(callback.from_user.id, job_id, revision):
                     await _remove_markup(message)
-                    await message.answer("❌ Голосовое сообщение отменено.", parse_mode=None)
+                    await message.edit_text(
+                        ui("cancelled", await locale(callback.from_user.id)),
+                        parse_mode=None,
+                        reply_markup=None,
+                    )
                     return
             elif action in {"confirm", "recover"}:
-                result = await actions.confirm(
-                    callback.from_user.id, job_id, revision, action == "recover"
-                )
-                if result is not None:
+
+                async def accepted() -> None:
                     await _remove_markup(message)
+                    try:
+                        await message.edit_text(
+                            ui("submitted", await locale(callback.from_user.id)),
+                            parse_mode=None,
+                            reply_markup=None,
+                        )
+                    except TelegramAPIError:
+                        logger.warning("Failed to close voice card: job_id=%s", job_id)
+
+                guarded = getattr(actions, "confirm_with_cleanup", None)
+                if guarded is not None:
+                    result = await guarded(
+                        callback.from_user.id, job_id, revision, action == "recover", accepted
+                    )
+                else:
+                    result = await actions.confirm(
+                        callback.from_user.id, job_id, revision, action == "recover"
+                    )
+                if result is not None:
+                    if action == "confirm" and guarded is None:
+                        await _remove_markup(message)
+                        try:
+                            await message.edit_text(
+                                ui("submitted", await locale(callback.from_user.id)),
+                                parse_mode=None,
+                                reply_markup=None,
+                            )
+                        except TelegramAPIError:
+                            logger.warning("Failed to close voice card: job_id=%s", job_id)
                     await _send_voice_reply(
                         message,
                         callback.from_user.id,
@@ -370,15 +487,12 @@ def register_voice_handlers(
                         confirm_reply_sent,
                         mini_app_url,
                         speech_actions,
+                        notice_actions,
                     )
                     return
             else:
                 return
         except (InputTooLongError, EmptyVoiceTextError, LLMError, ASRError, StorageError) as error:
-            await _voice_error(message, error)
+            await _voice_error(message, error, await locale(message.chat.id))
             return
-        await message.answer(
-            "Эта кнопка устарела или сообщение уже обработано. "
-            "Открой /voice для текущего состояния.",
-            parse_mode=None,
-        )
+        return
