@@ -1,5 +1,5 @@
 import { initializeLocalization, setLanguage, t, onLanguageChange } from './localization.mjs';
-import { initializeMiniApp } from './mini-app-ui.mjs';
+import { initializeMiniApp, revealMiniApp } from './mini-app-ui.mjs';
 import { createProfilePreferences } from './profile-state.mjs';
 import { loadProfile, updateAnswerLength, updateLanguageLevel, updateResponseMode, updateInterfaceLanguage } from './profile-client.mjs';
 
@@ -161,6 +161,7 @@ async function showProfile({ showError = false, keepLoading = false } = {}) {
       byId('main-content').setAttribute('aria-busy', 'false');
     }
     loading = false;
+    revealMiniApp();
   }
 }
 

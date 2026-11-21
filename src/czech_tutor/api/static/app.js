@@ -1,37 +1,14 @@
 import { FeedbackError, loadFeedback, parseReplyId, feedbackPresentation, feedbackHeading } from './feedback-client.mjs';
 import { initializeLocalization, setLanguage, getLanguage, t } from './localization.mjs';
-import { loadProfile } from './profile-client.mjs';
-import { initializeMiniApp, initialFeedbackTab } from './mini-app-ui.mjs';
+import { initializeMiniApp, initialFeedbackTab, revealMiniApp } from './mini-app-ui.mjs';
 
 initializeLocalization();
 const byId = id => document.getElementById(id);
 const telegram = initializeMiniApp();
 const urlParams = new URLSearchParams(window.location.search);
 const demo = urlParams.get('demo') === '1';
-const initialLang = urlParams.get('lang') || (telegram?.initDataUnsafe?.user?.language_code === 'uk' ? 'uk' : null);
-if (initialLang === 'uk') {
-  setLanguage('uk');
-}
 const tabs = [byId('corrections-tab'), byId('reply-tab')];
 const panels = [byId('corrections-panel'), byId('reply-panel')];
-const initialTab = urlParams.get('tab');
-if (initialTab === 'reply') {
-  const pageTitle = byId('page-title');
-  if (pageTitle?.firstChild) pageTitle.firstChild.textContent = t('Текст ответа');
-  const pageDesc = byId('page-description');
-  if (pageDesc) pageDesc.textContent = t('Прочитай ответ в своём темпе и возвращайся к разговору.');
-  document.title = `${t('Текст ответа')} · Czech Voice Tutor`;
-  if (tabs[0] && tabs[1]) {
-    tabs[0].setAttribute('aria-selected', 'false');
-    tabs[0].tabIndex = -1;
-    tabs[1].setAttribute('aria-selected', 'true');
-    tabs[1].tabIndex = 0;
-  }
-  if (panels[0] && panels[1]) {
-    panels[0].hidden = true;
-    panels[1].hidden = false;
-  }
-}
 let pending = false;
 let currentFeedback = null;
 
@@ -157,9 +134,10 @@ async function start() {
     } else {
       if (!telegram?.initData) throw new FeedbackError('missing-auth');
       const replyId = parseReplyId(window.location.search);
-      const profile = await loadProfile(telegram.initData);
-      setLanguage(profile.interface_language);
-      renderFeedback(await loadFeedback(replyId, telegram.initData));
+      const feedback = await loadFeedback(replyId, telegram.initData);
+      // Apply locale and final tab in one turn, before revealing any UI.
+      setLanguage(feedback.interface_language);
+      renderFeedback(feedback);
     }
   } catch (error) {
     renderError(error);
@@ -167,6 +145,7 @@ async function start() {
     pending = false;
     byId('loading-state').hidden = true;
     byId('main-content').setAttribute('aria-busy', 'false');
+    revealMiniApp();
   }
 }
 

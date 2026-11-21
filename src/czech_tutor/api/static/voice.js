@@ -1,6 +1,6 @@
 import { initializeLocalization, setLanguage, t, onLanguageChange } from './localization.mjs';
 import { loadProfile } from './profile-client.mjs';
-import { initializeMiniApp } from './mini-app-ui.mjs';
+import { initializeMiniApp, revealMiniApp } from './mini-app-ui.mjs';
 import { loadVoiceDraft, parseVoiceJobId, saveVoiceDraft } from './voice-client.mjs';
 import { createVoiceEditor } from './voice-state.mjs';
 
@@ -8,10 +8,6 @@ initializeLocalization();
 const telegram = initializeMiniApp();
 const params = new URLSearchParams(window.location.search);
 const demo = params.get('demo') === '1';
-const initialLang = params.get('lang') || (telegram?.initDataUnsafe?.user?.language_code === 'uk' ? 'uk' : null);
-if (initialLang === 'uk') {
-  setLanguage('uk');
-}
 const editor = createVoiceEditor();
 const byId = id => document.getElementById(id);
 const input = byId('voice-text');
@@ -106,6 +102,7 @@ async function load() {
   await pending;
   render();
   if (!editor.loaded) showLoadError(editor.error);
+  revealMiniApp();
 }
 
 function requestClose() {
@@ -177,11 +174,13 @@ if (demo) {
   byId('voice-loading').hidden = true;
   byId('voice-unavailable').hidden = false;
   byId('main-content').setAttribute('aria-busy', 'false');
+  revealMiniApp();
 } else {
   try {
     jobId = parseVoiceJobId(window.location.search);
     void load();
   } catch {
     showLoadError('invalid-job');
+    revealMiniApp();
   }
 }

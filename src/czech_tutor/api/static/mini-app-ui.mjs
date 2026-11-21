@@ -40,7 +40,6 @@ export function initializeMiniApp() {
   closeButton.hidden = !telegram?.initData;
   closeButton.addEventListener('click', () => telegram?.close());
   if (telegram) {
-    telegram.ready();
     if (telegram.initData) telegram.expand();
     telegram.onEvent('themeChanged', applyTheme);
   }
@@ -48,4 +47,9 @@ export function initializeMiniApp() {
   onLanguageChange(applyTheme);
   applyTheme();
   return telegram;
+}
+
+export function revealMiniApp() {
+  delete document.documentElement.dataset.uiPending;
+  window.Telegram?.WebApp?.ready();
 }

@@ -43,7 +43,7 @@ ASR_POLL_SECONDS = 12
 CLEANUP_SECONDS = 3
 
 
-def _snapshot(job: VoiceJob, *, can_recover: bool = False) -> VoiceInput:
+def _snapshot(job: VoiceJob, *, interface_language: str) -> VoiceInput:
     now = datetime.now(UTC)
     card_lease_until = (
         job.card_lease_until.replace(tzinfo=UTC)
@@ -57,10 +57,10 @@ def _snapshot(job: VoiceJob, *, can_recover: bool = False) -> VoiceInput:
         job.confirmed_text if job.confirmed_text is not None else job.transcript,
         job.revision,
         job.failure_reason,
-        can_recover,
         card_message_id=job.card_message_id,
         clarification_count=job.clarification_count,
         card_lease_active=lease_active,
+        interface_language=interface_language,
     )
 
 
@@ -69,6 +69,10 @@ async def _read(session_factory: SessionFactory, user_id: int, job_id: int) -> V
         job = await jobs.get_voice_job(session, job_id)
         if job is None or job.telegram_user_id != user_id:
             return None
+        learner = await session.get(User, user_id)
+        snapshot = _snapshot(
+            job, interface_language=learner.interface_language if learner else "ru"
+        )
         can_recover = False
         if job.status in {"confirmed", "awaiting_edit"} and job.source_message_id:
             reply = await get_tutor_reply(session, job.source_message_id)
@@ -82,14 +86,10 @@ async def _read(session_factory: SessionFactory, user_id: int, job_id: int) -> V
                         else source.created_at
                     )
                     if source.generation_status == "failed":
-                        return replace(_snapshot(job), failure_reason="generation_failed")
+                        return replace(snapshot, failure_reason="generation_failed")
                     if created < datetime.now(UTC) - timedelta(minutes=2):
-                        return replace(_snapshot(job), failure_reason="generation_interrupted")
-        learner = await session.get(User, user_id)
-        return replace(
-            _snapshot(job, can_recover=can_recover),
-            interface_language=learner.interface_language if learner else "ru",
-        )
+                        return replace(snapshot, failure_reason="generation_interrupted")
+        return replace(snapshot, can_recover_reply=can_recover)
 
 
 async def _cleanup_job(
@@ -198,13 +198,13 @@ async def process_voice_message(
         raise ASRError("Voice audio is empty or exceeds the byte limit.")
     try:
         async with session_factory.begin() as session:
-            await upsert_user(session, telegram_user_id, username)
+            learner = await upsert_user(session, telegram_user_id, username)
             await jobs.expire_voice_jobs(session, telegram_user_id)
             existing = await jobs.find_voice_job_by_message(
                 session, telegram_chat_id, telegram_message_id
             )
             if existing is not None:
-                return _snapshot(existing)
+                return _snapshot(existing, interface_language=learner.interface_language)
             await jobs.abandon_clarification_draft(session, telegram_user_id)
             active = await jobs.get_active_voice_job(session, telegram_user_id)
             if active is not None:
@@ -342,7 +342,11 @@ async def submit_voice_edit(
             )
             if previous_job is not None:
                 job = await jobs.get_voice_job(session, previous_job)
-                return _snapshot(job) if job and job.telegram_user_id == telegram_user_id else None
+                return (
+                    _snapshot(job, interface_language=learner.interface_language)
+                    if job and job.telegram_user_id == telegram_user_id
+                    else None
+                )
             await jobs.expire_voice_jobs(session, telegram_user_id)
             job = await jobs.get_active_voice_job(session, telegram_user_id)
             if (
@@ -358,7 +362,7 @@ async def submit_voice_edit(
                 )
             )
             if ordinary.scalar_one_or_none() is not None:
-                return _snapshot(job)
+                return _snapshot(job, interface_language=learner.interface_language)
             job = await jobs.get_voice_job(session, job.id, lock=True)
             # Journal every consumed edit, even when validation/cancellation wins.
             # Validation errors are raised only after this short transaction commits.

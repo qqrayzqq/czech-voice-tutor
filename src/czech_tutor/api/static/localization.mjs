@@ -244,5 +244,6 @@ export function registerStaticStrings(root = document) {
 export function initializeLocalization(search = window.location.search) {
   registerStaticStrings();
   const params = new URLSearchParams(search);
-  setLanguage(params.get('demo') === '1' ? params.get('lang') : 'ru');
+  // A button's locale is only a loading/error hint. Authenticated API data wins.
+  setLanguage(params.get('lang'));
 }

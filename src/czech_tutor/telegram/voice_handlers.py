@@ -68,39 +68,30 @@ class _LimitedBuffer(BytesIO):
         return super().write(data)
 
 
-
 @asynccontextmanager
 async def record_voice_action(
     bot: Bot, chat_id: int, *, interval: float = 4.5
 ) -> AsyncIterator[None]:
-    try:
-        await bot.send_chat_action(chat_id=chat_id, action="record_voice")
-    except Exception:
-        pass
-
-    stop_event = asyncio.Event()
-
+    """Keep the chat action alive without delaying processing on Telegram's response."""
     async def _pulse() -> None:
-        while not stop_event.is_set():
+        while True:
             try:
-                await asyncio.wait_for(stop_event.wait(), timeout=interval)
-            except TimeoutError:
+                await bot.send_chat_action(chat_id=chat_id, action="record_voice")
+            except Exception:
+                # Cosmetic status failures must not interrupt the actual reply.
                 pass
-            if not stop_event.is_set():
-                try:
-                    await bot.send_chat_action(chat_id=chat_id, action="record_voice")
-                except Exception:
-                    pass
+            await asyncio.sleep(interval)
 
     task = asyncio.create_task(_pulse())
     try:
+        # Let the first action start, without waiting for its network response.
+        await asyncio.sleep(0)
         yield
     finally:
-        stop_event.set()
         task.cancel()
         try:
             await task
-        except (asyncio.CancelledError, Exception):
+        except asyncio.CancelledError:
             pass
 
 

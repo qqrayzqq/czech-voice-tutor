@@ -22,6 +22,14 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { margin: 0; background: var(--page); color: var(--ink); font-size: 15px; line-height: 1.6; }
+/* No language-specific copy is painted until the authenticated settings arrive. */
+[data-ui-pending] body::before {
+  content: ""; position: fixed; top: calc(50% - 14px); left: calc(50% - 14px);
+  width: 28px; height: 28px; border: 3px solid var(--line); border-top-color: var(--green);
+  border-radius: 50%; animation: startup-spin .8s linear infinite;
+}
+@keyframes startup-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { [data-ui-pending] body::before { animation: none; } }
 button, a { -webkit-tap-highlight-color: transparent; }
 button { font: inherit; cursor: pointer; }
 a { color: inherit; }
