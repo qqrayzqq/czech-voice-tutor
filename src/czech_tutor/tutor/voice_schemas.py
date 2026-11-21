@@ -28,6 +28,11 @@ class VoiceInput:
     failure_reason: str | None = None
     can_recover_reply: bool = False
     pending_replies: tuple[VoiceRecovery, ...] = ()
+    card_message_id: int | None = None
+    interface_language: str = "ru"
+    clarification_count: int = 0
+    telegram_chat_id: int | None = None
+    card_lease_active: bool = False
 
 
 @dataclass(frozen=True)
@@ -36,6 +41,7 @@ class VoiceReply:
     delivery_token: str
     reply: ReplyToSend
     revision: int = 0
+    fallback_input: VoiceInput | None = None
 
 
 class EmptyVoiceTextError(ValueError):
@@ -71,6 +77,8 @@ class SavedVoiceDraft:
     draft: VoiceDraft
     telegram_chat_id: int
     changed: bool
+    card_message_id: int | None = None
+    interface_language: str = "ru"
 
 
 class VoiceDraftConflict(RuntimeError):
