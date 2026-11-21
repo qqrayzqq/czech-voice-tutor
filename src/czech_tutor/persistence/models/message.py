@@ -7,6 +7,7 @@ from sqlalchemy import (
     ForeignKey,
     Identity,
     Index,
+    Integer,
     Text,
     UniqueConstraint,
     func,
@@ -21,6 +22,16 @@ class Message(Base):
 
     __tablename__ = "messages"
     __table_args__ = (
+        CheckConstraint("input_revision >= 0", name="ck_messages_input_revision"),
+        CheckConstraint(
+            "feedback_status IN ('evaluated', 'not_evaluated', 'clarification', 'superseded')",
+            name="ck_messages_feedback_status",
+        ),
+        CheckConstraint("feedback_language IN ('ru', 'uk')", name="ck_messages_feedback_language"),
+        CheckConstraint(
+            "notice_state IN ('pending', 'sending', 'sent', 'skipped')",
+            name="ck_messages_notice_state",
+        ),
         CheckConstraint("role IN ('user', 'assistant')", name="ck_messages_role"),
         CheckConstraint(
             "generation_status IN ('processing', 'completed', 'failed')",
@@ -42,10 +53,19 @@ class Message(Base):
             name="ck_messages_role_fields",
         ),
         UniqueConstraint(
-            "telegram_chat_id", "telegram_message_id", name="uq_messages_telegram_message"
+            "telegram_chat_id",
+            "telegram_message_id",
+            "input_revision",
+            name="uq_messages_telegram_message",
         ),
         Index("ix_messages_conversation_created_id", "conversation_id", "created_at", "id"),
     )
+
+    input_revision: Mapped[int] = mapped_column(Integer, server_default="0")
+    feedback_status: Mapped[str] = mapped_column(Text, server_default="evaluated")
+    feedback_language: Mapped[str] = mapped_column(Text, server_default="ru")
+    notice_state: Mapped[str] = mapped_column(Text, server_default="pending")
+    notice_message_id: Mapped[int | None] = mapped_column(BigInteger)
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     conversation_id: Mapped[int] = mapped_column(

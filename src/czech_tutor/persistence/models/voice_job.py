@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     CheckConstraint,
     DateTime,
@@ -43,6 +44,12 @@ class VoiceJob(Base):
             ),
         ),
     )
+
+    card_message_id: Mapped[int | None] = mapped_column(BigInteger)
+    card_token: Mapped[str | None] = mapped_column(Text)
+    card_lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    asr_metadata: Mapped[dict | None] = mapped_column(JSON)
+    clarification_count: Mapped[int] = mapped_column(Integer, server_default="0")
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     telegram_user_id: Mapped[int] = mapped_column(
