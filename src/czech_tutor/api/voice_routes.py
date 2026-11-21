@@ -3,13 +3,11 @@
 import logging
 from typing import Annotated
 
-from aiogram.exceptions import TelegramAPIError
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response
 from sqlalchemy.exc import SQLAlchemyError
 
 from czech_tutor.api.dependencies import get_current_user_id
-from czech_tutor.telegram.keyboards import build_voice_confirmation_keyboard
-from czech_tutor.telegram.voice_handlers import voice_confirmation_text
+from czech_tutor.telegram.voice_cards import MissingVoiceCard, reconcile_voice_card
 from czech_tutor.tutor.voice_draft_service import load_voice_draft, save_voice_draft
 from czech_tutor.tutor.voice_schemas import (
     UpdateVoiceDraft,
@@ -62,20 +60,14 @@ async def patch_draft(
         raise HTTPException(503, detail="Voice editor is temporarily unavailable.") from None
     if saved is None:
         raise HTTPException(404, detail="Voice input not found.")
-    notified = False
-    if saved.changed:
-        try:
-            await request.app.state.bot.send_message(
-                chat_id=saved.telegram_chat_id,
-                text=voice_confirmation_text(saved.draft.text),
-                parse_mode=None,
-                reply_markup=build_voice_confirmation_keyboard(
-                    saved.draft.job_id,
-                    saved.draft.revision,
-                    mini_app_url=request.app.state.settings.mini_app_url,
-                ),
-            )
-            notified = True
-        except TelegramAPIError:
-            logger.warning("Saved voice draft notification failed: job_id=%s", job_id)
+    try:
+        notified = await reconcile_voice_card(
+            request.app.state.bot,
+            request.app.state.session_factory,
+            user_id,
+            job_id,
+            request.app.state.settings.mini_app_url,
+        )
+    except MissingVoiceCard:
+        notified = False
     return VoiceDraftSaved(**saved.draft.model_dump(), notification_sent=notified)
