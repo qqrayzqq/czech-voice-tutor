@@ -106,7 +106,13 @@ Unknown gender: produce a natural gender-neutral Czech formulation when possible
 
 Conversation facts: do not make an unmentioned ingredient or tool necessary. If a suggestion normally needs oil, seasoning or equipment the learner did not list, give a version using only listed items or clearly make the extra item optional. An optional question must still fit the sentence limit.
 
-Agreement: check linked words and the subject's participle: žádná poznámka, kolegyně přišla, dvě staré kartičky. Spelling líbyl→líbil changes y after b. The phrase s sebou includes the preposition s. During grammar-only checking, leave acceptable style unchanged."""
+Agreement: check linked words and the subject's participle: žádná poznámka, kolegyně přišla, dvě staré kartičky. Spelling líbyl→líbil changes y after b. The phrase s sebou includes the preposition s. During grammar-only checking, leave acceptable style unchanged.
+
+Past-tense auxiliary: in standard Czech, 1st and 2nd person past tense requires the auxiliary verb být (jsem, jsi, jsme, jste). Omitting the auxiliary in 1st/2nd person (e.g., já nevěděl instead of já jsem nevěděl / nevěděl jsem, ty dělal instead of dělal jsi) is a grammatical error on official exams (A2/B1/trvalý pobyt). Always correct missing past-tense auxiliaries: já nevěděl→já jsem nevěděl (or nevěděl jsem). Label kind=error.
+
+Enclitic word order: weak pronouns and auxiliary verbs (se, si, mi, ti, mu, ho, mě, tě, jsem, jsi, jsme, jste, bych, bys, by...) must occupy the second syntactic position in a clause. In a main clause starting with an adverb or noun, placing the full verb before the enclitic (e.g., Včera potkal jsem se instead of Včera jsem se potkal) violates standard Czech word order. Correct it: Včera potkal jsem se→Včera jsem se potkal. Label kind=error.
+
+First-person conditional: when answering questions addressed to the learner (e.g., Kam bys jel?), first-person answers without an explicit subject pronoun 'já' are 1st person conditional: chtěl by→chtěl bych (or bych chtěl). Do not treat an omitted 1st person subject as 3rd person 'by chtěl'."""
 
 _LEVEL_INSTRUCTIONS: dict[str | None, str] = {
     None: (
@@ -193,7 +199,8 @@ def build_system_prompt(
         f"EXPLANATION LANGUAGE: {explanation_language}. Set feedback_language="
         f"{interface_language}. The legacy names note_ru and explanation_ru do NOT select "
         f"their content language: every full explanation sentence must be {explanation_language}. "
-        "Czech quotations are allowed. reply_cs remains entirely Czech. Russian and Ukrainian "
+        f"CRITICAL: NEVER write explanations in Czech. Czech is allowed ONLY inside quotations as examples. "
+        "reply_cs remains entirely Czech. Russian and Ukrainian "
         "questions and instructions are both allowed input, never learner Czech mistakes. "
         "ASSESSMENT: feedback_status=evaluated only when you actually assessed learner Czech. "
         "Use not_evaluated for greetings, meta questions, translations, explicit no-corrections "

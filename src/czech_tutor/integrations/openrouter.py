@@ -12,6 +12,7 @@ def build_request_payload(
 ) -> dict[str, object]:
     if feedback_language not in {"ru", "uk"}:
         raise ValueError("Unsupported feedback language.")
+    explanation_lang = "Russian" if feedback_language == "ru" else "Ukrainian"
     res: dict[str, object] = {}
     res["model"] = "openai/gpt-6-luna"
     res["provider"] = {
@@ -53,7 +54,7 @@ def build_request_payload(
                     "note_ru": {
                         "type": "string",
                         "description": (
-                            "Explanation in the saved ru/uk profile language. "
+                            f"Explanation strictly in {explanation_lang}. NEVER in Czech. "
                             "Czech quotations allowed. "
                             "Empty if not needed or already explained in corrections."
                         ),
@@ -82,8 +83,8 @@ def build_request_payload(
                                 "explanation_ru": {
                                     "type": "string",
                                     "description": (
-                                        "Brief explanation in the saved ru/uk language; "
-                                        "Czech quotations allowed."
+                                        f"Brief reason strictly in {explanation_lang}. "
+                                        "NEVER in Czech. Czech quotations allowed."
                                     ),
                                 },
                             },
