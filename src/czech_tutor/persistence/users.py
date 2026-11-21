@@ -36,10 +36,7 @@ async def get_user(
 ) -> User | None:
     """Read a learner by Telegram ID without creating rows or committing."""
 
-    statement = (
-        select(User)
-        .where(User.telegram_user_id == telegram_user_id)
-    )
+    statement = select(User).where(User.telegram_user_id == telegram_user_id)
     result = await session.execute(statement)
     return result.scalar_one_or_none()
 
@@ -73,4 +70,14 @@ async def update_answer_length(
         .returning(User.telegram_user_id)
     )
     result = await session.execute(statement)
+    return result.scalar_one_or_none() is not None
+
+
+async def update_response_mode(session: AsyncSession, telegram_user_id: int, mode: str) -> bool:
+    result = await session.execute(
+        update(User)
+        .where(User.telegram_user_id == telegram_user_id)
+        .values(response_mode=mode)
+        .returning(User.telegram_user_id)
+    )
     return result.scalar_one_or_none() is not None
