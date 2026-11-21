@@ -1,8 +1,13 @@
+import { initializeLocalization, setLanguage, t, onLanguageChange } from './localization.mjs';
+import { loadProfile } from './profile-client.mjs';
 import { initializeMiniApp } from './mini-app-ui.mjs';
 import { loadVoiceDraft, parseVoiceJobId, saveVoiceDraft } from './voice-client.mjs';
 import { createVoiceEditor } from './voice-state.mjs';
 
+initializeLocalization();
 const telegram = initializeMiniApp();
+const params = new URLSearchParams(window.location.search);
+const demo = params.get('demo') === '1';
 const editor = createVoiceEditor();
 const byId = id => document.getElementById(id);
 const input = byId('voice-text');
@@ -49,20 +54,20 @@ function render() {
   const tooLong = editor.count > editor.maxChars;
   input.setAttribute('aria-invalid', String(tooLong));
   byId('voice-limit').textContent = editor.count === 0
-    ? 'Добавь текст, чтобы сохранить.'
-    : tooLong ? `Сократи текст ещё на ${editor.count - editor.maxChars} симв.` : 'До 2000 символов';
+    ? t('Добавь текст, чтобы сохранить.')
+    : tooLong ? t('Сократи текст ещё на {count} симв.', { count: editor.count - editor.maxChars }) : t('До 2000 символов');
   byId('voice-limit').parentElement.classList.toggle('is-invalid', tooLong);
   saveButton.disabled = !editor.canSave;
-  saveButton.firstChild.textContent = editor.saving ? 'Сохраняем…' : 'Сохранить текст';
+  saveButton.firstChild.textContent = t(editor.saving ? 'Сохраняем…' : 'Сохранить текст');
   byId('voice-save-error').hidden = !editor.loaded || !editor.error;
-  byId('voice-save-error').textContent = editor.error ? errorMessages[editor.error] || errorMessages.unavailable : '';
+  byId('voice-save-error').textContent = editor.error ? t(errorMessages[editor.error] || errorMessages.unavailable) : '';
   byId('voice-save-status').textContent = editor.saving
-    ? 'Сохраняем текст…'
+    ? t('Сохраняем текст…')
     : editor.notificationSent !== null && editor.dirty
-      ? 'Предыдущая правка сохранена. Сохрани новые изменения, когда закончишь.' : '';
-  byId('voice-saved-message').textContent = editor.notificationSent === false
-    ? 'Вернись в чат и отправь /voice — бот покажет сохранённый текст для подтверждения.'
-    : 'Вернись в чат с ботом, чтобы продолжить.';
+      ? t('Предыдущая правка сохранена. Сохрани новые изменения, когда закончишь.') : '';
+  byId('voice-saved-message').textContent = demo ? t('Демо: текст сохранён только здесь. Карточка в Telegram не изменялась.') : editor.notificationSent === false
+    ? t('Правка сохранена, но карточку в чате обновить не удалось. Вернись в чат и отправь /voice.')
+    : t('Карточка в чате обновлена. Вернись к ней и нажми «Отправить».');
   syncClosingConfirmation();
   if (editor.saved && !savedFocus) {
     byId('voice-saved').focus();
@@ -80,14 +85,19 @@ function showLoadError(code) {
     'invalid-response': 'Не удалось загрузить текст. Попробуй ещё раз.',
     conflict: 'Текст уже отправлен или время правки истекло. Вернись в чат и отправь /voice.',
   };
-  byId('voice-load-error-message').textContent = messages[code] || errorMessages[code] || messages.unavailable;
+  byId('voice-load-error-message').textContent = t(messages[code] || errorMessages[code] || messages.unavailable);
   byId('voice-retry').hidden = !['network', 'timeout', 'unavailable', 'invalid-response'].includes(code);
   byId('main-content').setAttribute('aria-busy', 'false');
 }
 
 async function load() {
   byId('voice-load-error').hidden = true;
-  const pending = editor.load(() => loadVoiceDraft(jobId, telegram.initData));
+  const pending = editor.load(async () => {
+    if (demo) return { job_id: 1, revision: 0, text: 'Dnes jsem šel do obchodu.', max_chars: 2000 };
+    const settings = await loadProfile(telegram.initData);
+    setLanguage(settings.interface_language);
+    return loadVoiceDraft(jobId, telegram.initData);
+  });
   render();
   await pending;
   render();
@@ -109,7 +119,7 @@ function requestClose() {
     close();
     return;
   }
-  const message = editor.saving ? 'Сохранение ещё выполняется. Вернуться в чат?' : 'Выйти без сохранения изменений?';
+  const message = t(editor.saving ? 'Сохранение ещё выполняется. Вернуться в чат?' : 'Выйти без сохранения изменений?');
   if (typeof telegram?.showConfirm === 'function') {
     try {
       confirmOpen = true;
@@ -139,7 +149,9 @@ input.addEventListener('input', () => {
 });
 byId('voice-editor').addEventListener('submit', async event => {
   event.preventDefault();
-  const pending = editor.save((text, revision) => saveVoiceDraft(jobId, text, revision, telegram.initData));
+  const pending = editor.save((text, revision) => demo
+    ? Promise.resolve({ job_id: 1, text, revision: revision + 1, max_chars: 2000, notification_sent: true })
+    : saveVoiceDraft(jobId, text, revision, telegram.initData));
   render();
   await pending;
   render();
@@ -151,7 +163,13 @@ window.addEventListener('beforeunload', event => {
   }
 });
 
-if (!telegram?.initData?.trim()) {
+const stopLocaleUpdates = onLanguageChange(() => { if (editor.loaded) render(); });
+window.addEventListener('pagehide', stopLocaleUpdates);
+
+if (demo) {
+  byId('voice-demo-notice').hidden = false;
+  void load();
+} else if (!telegram?.initData?.trim()) {
   byId('voice-loading').hidden = true;
   byId('voice-unavailable').hidden = false;
   byId('main-content').setAttribute('aria-busy', 'false');
