@@ -8,6 +8,10 @@ initializeLocalization();
 const telegram = initializeMiniApp();
 const params = new URLSearchParams(window.location.search);
 const demo = params.get('demo') === '1';
+const initialLang = params.get('lang') || (telegram?.initDataUnsafe?.user?.language_code === 'uk' ? 'uk' : null);
+if (initialLang === 'uk') {
+  setLanguage('uk');
+}
 const editor = createVoiceEditor();
 const byId = id => document.getElementById(id);
 const input = byId('voice-text');

@@ -25,8 +25,9 @@ def build_feedback_keyboard(
     ):
         return None
 
-    url = f"{mini_app_url}?reply_id={reply_id}" + (
-        "&tab=reply" if include_reply else "&tab=corrections"
+    tab = "reply" if include_reply else "corrections"
+    url = f"{mini_app_url}?reply_id={reply_id}&tab={tab}" + (
+        f"&lang={language}" if language != "ru" else ""
     )
     web_app = WebAppInfo(url=url)
     if include_reply:
@@ -113,7 +114,9 @@ def build_voice_edit_button(
 ) -> InlineKeyboardButton:
     if mini_app_url:
         base = mini_app_url if mini_app_url.endswith(("/", ".html")) else mini_app_url + "/"
-        url = f"{urljoin(base, 'voice.html')}?job_id={job_id}"
+        url = f"{urljoin(base, 'voice.html')}?job_id={job_id}" + (
+            f"&lang={language}" if language != "ru" else ""
+        )
         return InlineKeyboardButton(text=ui("edit", language), web_app=WebAppInfo(url=url))
     return InlineKeyboardButton(
         text=ui("edit", language), callback_data=f"voice:edit:{job_id}:{revision}"
