@@ -103,6 +103,14 @@ class ProfileSettings(BaseModel):
 
     language_level: Literal["A1", "A2", "B1", "B2", "C1", "C2"] | None
     answer_length: Literal["short", "medium", "long"]
+    response_mode: Literal["text", "voice"]
+
+
+class UpdateResponseMode(BaseModel):
+    """Persist the authenticated learner's output modality."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+    response_mode: Literal["text", "voice"]
 
 
 class UpdateLanguageLevel(BaseModel):

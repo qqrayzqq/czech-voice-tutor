@@ -3,6 +3,8 @@ import re
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
+from czech_tutor.integrations.speech import SPEECH_VOICES
+
 
 class ConfigurationError(ValueError):
     """The application cannot start with the supplied configuration."""
@@ -17,6 +19,8 @@ class Settings:
     mini_app_url: str | None = None
     webhook_secret: str | None = field(default=None, repr=False)
     soniox_api_key: str | None = field(default=None, repr=False)
+    tts_enabled: bool = True
+    tts_voice: str = "nadine"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -60,6 +64,12 @@ class Settings:
             )
 
         soniox_api_key = os.environ.get("SONIOX_API_KEY", "").strip() or None
+        tts_enabled = os.environ.get("TTS_ENABLED", "true").strip().lower()
+        if tts_enabled not in {"true", "false"}:
+            raise ConfigurationError("TTS_ENABLED must be true or false.")
+        tts_voice = os.environ.get("TTS_VOICE", "nadine").strip()
+        if tts_voice not in SPEECH_VOICES:
+            raise ConfigurationError("TTS_VOICE must be a supported HeyGen voice.")
 
         return cls(
             bot_token=token,
@@ -69,4 +79,6 @@ class Settings:
             mini_app_url=mini_app_url,
             webhook_secret=webhook_secret,
             soniox_api_key=soniox_api_key,
+            tts_enabled=tts_enabled == "true",
+            tts_voice=tts_voice,
         )

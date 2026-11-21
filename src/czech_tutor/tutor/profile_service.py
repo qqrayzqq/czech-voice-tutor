@@ -1,7 +1,17 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from czech_tutor.persistence.users import get_user, update_answer_length, update_language_level
-from czech_tutor.tutor.schemas import ProfileSettings, UpdateAnswerLength, UpdateLanguageLevel
+from czech_tutor.persistence.users import (
+    get_user,
+    update_answer_length,
+    update_language_level,
+    update_response_mode,
+)
+from czech_tutor.tutor.schemas import (
+    ProfileSettings,
+    UpdateAnswerLength,
+    UpdateLanguageLevel,
+    UpdateResponseMode,
+)
 
 
 async def load_profile(
@@ -16,6 +26,7 @@ async def load_profile(
     return ProfileSettings(
         language_level=user.language_level,
         answer_length=user.answer_length,
+        response_mode=user.response_mode,
     )
 
 
@@ -39,5 +50,15 @@ async def save_answer_length(
     """Save answer length and reuse its validated DTO before caller commit."""
     found = await update_answer_length(session, telegram_user_id, preference.answer_length)
     if not found:
+        return None
+    return preference
+
+
+async def save_response_mode(
+    session: AsyncSession,
+    telegram_user_id: int,
+    preference: UpdateResponseMode,
+) -> UpdateResponseMode | None:
+    if not await update_response_mode(session, telegram_user_id, preference.response_mode):
         return None
     return preference

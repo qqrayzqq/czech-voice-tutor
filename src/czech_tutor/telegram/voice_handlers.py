@@ -11,10 +11,10 @@ from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from czech_tutor.telegram.keyboards import (
-    build_feedback_keyboard,
     build_voice_confirmation_keyboard,
     build_voice_status_keyboard,
 )
+from czech_tutor.telegram.reply_sender import SpeechActions, send_tutor_reply
 from czech_tutor.tutor.errors import (
     ActiveVoiceJobError,
     ASRError,
@@ -195,16 +195,11 @@ async def _send_voice_reply(
     actions: VoiceActions,
     confirm_reply_sent: Callable[[int, int, int], Awaitable[None]],
     mini_app_url: str | None,
+    speech_actions: SpeechActions | None = None,
 ) -> None:
     answer = result.reply
     try:
-        sent = await message.answer(
-            answer.reply_cs,
-            parse_mode=None,
-            reply_markup=build_feedback_keyboard(
-                mini_app_url, answer.reply_id, answer.corrections_count, answer.has_note
-            ),
-        )
+        sent = await send_tutor_reply(message, user_id, answer, mini_app_url, speech_actions)
     except Exception:
         logger.warning("Failed to send saved voice reply: reply_id=%s", answer.reply_id)
         try:
@@ -223,6 +218,8 @@ async def _send_voice_reply(
         except Exception:
             logger.warning("Failed to send voice recovery notice: job_id=%s", result.job_id)
         return
+    if sent is None:
+        return
     try:
         await confirm_reply_sent(answer.reply_id, sent.chat.id, sent.message_id)
     except StorageError:
@@ -234,6 +231,7 @@ def register_voice_handlers(
     actions: VoiceActions | None,
     confirm_reply_sent: Callable[[int, int, int], Awaitable[None]],
     mini_app_url: str | None,
+    speech_actions: SpeechActions | None = None,
 ) -> None:
     async def not_connected(message: Message) -> None:
         await message.answer(
@@ -371,6 +369,7 @@ def register_voice_handlers(
                         actions,
                         confirm_reply_sent,
                         mini_app_url,
+                        speech_actions,
                     )
                     return
             else:

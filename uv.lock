@@ -177,6 +177,7 @@ dependencies = [
     { name = "alembic" },
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "lameenc" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
     { name = "python-dotenv" },
@@ -197,6 +198,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.20.1" },
     { name = "fastapi", specifier = ">=0.163.1" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "lameenc", specifier = ">=1.9,<2" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.9" },
     { name = "pydantic", specifier = ">=2.13,<3" },
     { name = "python-dotenv", specifier = ">=1,<2" },
@@ -325,6 +327,28 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/01/e1/2069291243c926a2ff1cd706c7f3eeb9b62144bf60f77c9fb9ff2fb26bd3/iniconfig-2.3.1.tar.gz", hash = "sha256:67f4b9c50da0dedf52af349e7749a80a9057a5031199791b906c3bb3ae878960", size = 21209, upload-time = "2026-10-06T22:48:38.076Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/56/43/4ca9e49d27a1fcf6bece6f6aec0ea46bb9112489b93d4b688fb415457bdb/iniconfig-2.3.1-py3-none-any.whl", hash = "sha256:9121e2c1fdb355232495be3194c8dfe87ccc2d5dee45947b78e68f499790d7a7", size = 7552, upload-time = "2026-10-06T22:48:36.959Z" },
+]
+
+[[package]]
+name = "lameenc"
+version = "1.9.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f7/54/27eee120678f361e34f8fbf24627879dfd3a2efc5737f61dc0bd48146c0c/lameenc-1.9.0-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:982aed68bb0573918da320806be358e636fa58ebdcbdd9b1f0428781a3d5bc3a", size = 124089, upload-time = "2026-10-15T20:09:59.588Z" },
+    { url = "https://files.pythonhosted.org/packages/70/a9/4f8841ac071c0a92cbc48af06b9a26b189ea2144085eac8a75f0fa1c546f/lameenc-1.9.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:c59cda560753447d51db92dd93bb24046e6feefd751d3ce70dad822efdef9330", size = 126455, upload-time = "2026-10-15T20:09:58.896Z" },
+    { url = "https://files.pythonhosted.org/packages/40/a0/01e0e46a77dbb456a4d901d556b2db03d17cb4e23df7d27f66e03704cde2/lameenc-1.9.0-cp312-cp312-manylinux1_i686.manylinux_2_34_i686.manylinux_2_5_i686.whl", hash = "sha256:a0c4a64d1f5d95dbadda8514a7ae198935339ce352db8a147c23c87cc57ebbad", size = 179711, upload-time = "2026-10-15T20:07:57.1Z" },
+    { url = "https://files.pythonhosted.org/packages/ee/ff/c954d3afeb5182f37796d42ed273c84a53f5cf297abf7966f360bf803f54/lameenc-1.9.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:7b2be5d33fdfba53743d39335092718676b143ecb58e69fc58fe4c9dc8ea36f4", size = 184602, upload-time = "2026-10-15T20:24:20.926Z" },
+    { url = "https://files.pythonhosted.org/packages/08/35/fa2782fffb8ffed37f878fcc0ee9e35957fa715da783a06d51191604515c/lameenc-1.9.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_34_aarch64.whl", hash = "sha256:c56c7259af9fd538649ec6d6eb94d56497451f4c425bbd98d79231e09b1c2a04", size = 184318, upload-time = "2026-10-15T20:15:11.437Z" },
+    { url = "https://files.pythonhosted.org/packages/e9/97/9ed069751da09c6918bb61a94791b548a4aec004947156812535d7af8c5f/lameenc-1.9.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:57a4af2c2e8941de9a9a7cbf40200aeb952180558da3aace787e14a45230dffa", size = 187174, upload-time = "2026-10-15T20:08:02.308Z" },
+    { url = "https://files.pythonhosted.org/packages/e4/a8/c2b93242dafabc96409028343e382ab7e80ffb5bf1f0298d0878f1a43159/lameenc-1.9.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_34_x86_64.whl", hash = "sha256:5b3e70b128e404395ffc0274c7dff5afa181adf28433ac3e79120f414d3c2e40", size = 187040, upload-time = "2026-10-15T20:09:38.3Z" },
+    { url = "https://files.pythonhosted.org/packages/49/37/0d433b938b8b241263fdd2a962090473dca194f9238f6a84f79057aa041a/lameenc-1.9.0-cp312-cp312-win32.whl", hash = "sha256:eb8aaab1e5db47dd9590b1bef80d5f63c6a16335a8819390a2e2e6ac4f1cb411", size = 101030, upload-time = "2026-10-15T20:10:35.018Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/e2/66f746a6e8227fe7f4a31bac4dc57cbe46eba354b534c5c55efb239c72d2/lameenc-1.9.0-cp312-cp312-win_amd64.whl", hash = "sha256:9250049277c59656be8f632a1eb636c8806769fbf4a902d510f1228ca1e550f4", size = 119551, upload-time = "2026-10-15T20:10:50.038Z" },
+    { url = "https://files.pythonhosted.org/packages/ce/d8/efd97fa3bcd6a0b029ab33adba6e1ab910196795dc9d3ccf030453dd58fe/lameenc-1.9.0-cp312-cp312-win_arm64.whl", hash = "sha256:6c007feab906978c8f9812ae8a9b4d5b94ea1acbcd5ca37e686672e8e5a24140", size = 105722, upload-time = "2026-10-15T20:11:00.886Z" },
+    { url = "https://files.pythonhosted.org/packages/40/8e/6f2f61500d1737ff76d440bec9030e418d4eb8cebcba5d4821c5895ec02e/lameenc-1.9.0-pp312-pypy312_pp80-manylinux1_i686.manylinux_2_34_i686.manylinux_2_5_i686.whl", hash = "sha256:bfbe9473e535778de4d93ca2882443ec8837706cb1f856d3c94b062f63d77ef8", size = 167789, upload-time = "2026-10-15T20:08:09.961Z" },
+    { url = "https://files.pythonhosted.org/packages/23/58/3c06889a753a25dc5da3edcc3e3d2b4c0107474d62d6c8a3b7cf82408629/lameenc-1.9.0-pp312-pypy312_pp80-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:6ccd1bc86a8e3779afdbbb2653c84666bc7e4d4506bd923a73fe778f0d0e7be5", size = 170602, upload-time = "2026-10-15T20:24:34.031Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/9f/3a1119c58a799db183083cd72db7abc4e98a39b4ecc8ab95b16716a03215/lameenc-1.9.0-pp312-pypy312_pp80-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_34_aarch64.whl", hash = "sha256:c3765a73ce1d029ac0d1fc846e1419a71749fdd60e3e1f407a5f53a712d0e86f", size = 170598, upload-time = "2026-10-15T20:15:23.047Z" },
+    { url = "https://files.pythonhosted.org/packages/3a/b9/87ef478c3f6faa89317c222720a281cff44ab6c086965ebd0a17bcf94c10/lameenc-1.9.0-pp312-pypy312_pp80-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:09ddeff7be0b7aefe897e66e4bfaafbcd7d2b56ec1f6ee7aa9f5b4203ed5a310", size = 172681, upload-time = "2026-10-15T20:08:20.883Z" },
+    { url = "https://files.pythonhosted.org/packages/ef/1c/5b0fe1b05708f4603f0001770d3843942dcd195795581f84ea7d5c2e6dd4/lameenc-1.9.0-pp312-pypy312_pp80-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_34_x86_64.whl", hash = "sha256:00d26562dfb0ff7f97bda287f7f7008f87b783748f14bae90a4b8c625a574a50", size = 172669, upload-time = "2026-10-15T20:09:49.47Z" },
 ]
 
 [[package]]

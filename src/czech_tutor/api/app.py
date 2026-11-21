@@ -22,12 +22,18 @@ from czech_tutor.persistence.connection import (
 from czech_tutor.telegram.bootstrap import create_dispatcher
 from czech_tutor.tutor.errors import StorageError
 from czech_tutor.tutor.feedback_service import load_reply_feedback
-from czech_tutor.tutor.profile_service import load_profile, save_answer_length, save_language_level
+from czech_tutor.tutor.profile_service import (
+    load_profile,
+    save_answer_length,
+    save_language_level,
+    save_response_mode,
+)
 from czech_tutor.tutor.schemas import (
     ProfileSettings,
     ReplyFeedback,
     UpdateAnswerLength,
     UpdateLanguageLevel,
+    UpdateResponseMode,
 )
 
 logger = logging.getLogger(__name__)
@@ -159,6 +165,22 @@ def create_app() -> FastAPI:
                 status_code=503,
                 detail="Profile is temporarily unavailable.",
             )
+        if saved is None:
+            raise HTTPException(404, detail="Profile not found.")
+        return saved
+
+    @app.patch("/api/profile/response-mode")
+    async def patch_response_mode(
+        preference: UpdateResponseMode,
+        request: Request,
+        telegram_user_id: Annotated[int, Depends(get_current_user_id)],
+    ) -> UpdateResponseMode:
+        try:
+            async with request.app.state.session_factory.begin() as session:
+                saved = await save_response_mode(session, telegram_user_id, preference)
+        except SQLAlchemyError:
+            logger.warning("Failed to save profile preference: response_mode")
+            raise HTTPException(503, detail="Profile is temporarily unavailable.") from None
         if saved is None:
             raise HTTPException(404, detail="Profile not found.")
         return saved

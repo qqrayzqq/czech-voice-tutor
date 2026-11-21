@@ -1,14 +1,16 @@
 export const LANGUAGE_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 export const ANSWER_LENGTHS = ['short', 'medium', 'long'];
+export const RESPONSE_MODES = ['voice', 'text'];
 
-export function createProfilePreferences({ language_level = null, answer_length = 'short' } = {}) {
+export function createProfilePreferences({ language_level = null, answer_length = 'short', response_mode = 'voice' } = {}) {
   if ((language_level !== null && !LANGUAGE_LEVELS.includes(language_level))
-    || !ANSWER_LENGTHS.includes(answer_length)) {
+    || !ANSWER_LENGTHS.includes(answer_length) || !RESPONSE_MODES.includes(response_mode)) {
     throw new Error('Invalid profile preference');
   }
   return {
     languageLevel: createPreference(language_level, LANGUAGE_LEVELS),
     answerLength: createPreference(answer_length, ANSWER_LENGTHS),
+    responseMode: createPreference(response_mode, RESPONSE_MODES),
   };
 }
 

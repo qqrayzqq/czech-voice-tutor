@@ -6,7 +6,7 @@ from aiogram.enums import ChatType
 from aiogram.filters import CommandStart
 from aiogram.types import Message
 
-from czech_tutor.telegram.keyboards import build_feedback_keyboard
+from czech_tutor.telegram.reply_sender import SpeechActions, send_tutor_reply
 from czech_tutor.telegram.voice_handlers import (
     VoiceActions,
     present_voice_input,
@@ -29,6 +29,7 @@ def create_router(
     confirm_reply_sent: Callable[[int, int, int], Awaitable[None]],
     mini_app_url: str | None = None,
     voice_actions: VoiceActions | None = None,
+    speech_actions: SpeechActions | None = None,
 ) -> Router:
     router = Router(name="local_text_bot")
     router.message.filter(
@@ -54,7 +55,7 @@ def create_router(
             )
         )
 
-    register_voice_handlers(router, voice_actions, confirm_reply_sent, mini_app_url)
+    register_voice_handlers(router, voice_actions, confirm_reply_sent, mini_app_url, speech_actions)
 
     @router.message(F.text)
     async def handle_text(message: Message) -> None:
@@ -116,21 +117,19 @@ def create_router(
         if answer is None:
             return
 
-        keyboard = build_feedback_keyboard(
-            mini_app_url,
-            answer.reply_id,
-            answer.corrections_count,
-            answer.has_note,
-        )
         try:
-            sent = await message.answer(
-                answer.reply_cs,
-                parse_mode=None,
-                reply_markup=keyboard,
+            sent = await send_tutor_reply(
+                message,
+                message.from_user.id,
+                answer,
+                mini_app_url,
+                speech_actions,
             )
         except Exception:
             logger.warning("Failed to send tutor reply: reply_id=%s", answer.reply_id)
             raise
+        if sent is None:
+            return
         try:
             await confirm_reply_sent(answer.reply_id, sent.chat.id, sent.message_id)
         except StorageError:

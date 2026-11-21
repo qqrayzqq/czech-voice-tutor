@@ -1,5 +1,9 @@
 import { parseReplyId } from './feedback-client.mjs';
 
+export function initialFeedbackTab(search) {
+  return new URLSearchParams(search).get('tab') === 'reply' ? 1 : 0;
+}
+
 export function buildMiniAppLink(page, search) {
   const params = new URLSearchParams();
   try {

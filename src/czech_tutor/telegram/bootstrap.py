@@ -4,9 +4,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from czech_tutor.config import Settings
 from czech_tutor.telegram.handlers import create_router
+from czech_tutor.telegram.reply_sender import SpeechActions
 from czech_tutor.telegram.voice_handlers import VoiceActions
 from czech_tutor.tutor.delivery_service import confirm_reply_delivery
 from czech_tutor.tutor.schemas import ReplyToSend
+from czech_tutor.tutor.speech_service import complete_speech, prepare_speech, release_speech
 from czech_tutor.tutor.text_service import process_text_message
 from czech_tutor.tutor.voice_schemas import VoiceInput, VoiceReply
 from czech_tutor.tutor.voice_service import (
@@ -153,6 +155,42 @@ def create_dispatcher(
             release_reply=release_reply,
         )
 
+    async def prepare_audio(user_id: int, reply_id: int):
+        return await prepare_speech(
+            session_factory,
+            client,
+            settings.open_router_api_key,
+            user_id,
+            reply_id,
+            settings.tts_voice,
+        )
+
+    async def complete_audio(
+        user_id: int,
+        reply_id: int,
+        token: str,
+        file_id: str,
+        chat_id: int,
+        message_id: int,
+    ) -> None:
+        await complete_speech(
+            session_factory,
+            user_id,
+            reply_id,
+            token,
+            file_id,
+            chat_id,
+            message_id,
+        )
+
+    async def release_audio(user_id: int, reply_id: int, token: str) -> None:
+        await release_speech(session_factory, user_id, reply_id, token)
+
+    speech_actions = (
+        SpeechActions(prepare_audio, complete_audio, release_audio)
+        if settings.tts_enabled
+        else None
+    )
     dispatcher = Dispatcher()
     dispatcher.include_router(
         create_router(
@@ -161,6 +199,7 @@ def create_dispatcher(
             confirm_reply_sent,
             settings.mini_app_url,
             voice_actions=voice_actions,
+            speech_actions=speech_actions,
         )
     )
     return dispatcher

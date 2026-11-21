@@ -1,5 +1,5 @@
 import { FeedbackError, loadFeedback, parseReplyId } from './feedback-client.mjs';
-import { buildMiniAppLink, initializeMiniApp } from './mini-app-ui.mjs';
+import { buildMiniAppLink, initializeMiniApp, initialFeedbackTab } from './mini-app-ui.mjs';
 
 const byId = id => document.getElementById(id);
 const telegram = initializeMiniApp();
@@ -47,7 +47,7 @@ function renderFeedback(feedback) {
   byId('note-text').textContent = feedback.note_ru;
   byId('note-card').hidden = !feedback.note_ru.trim();
   byId('feedback').hidden = false;
-  activateTab(0);
+  activateTab(initialFeedbackTab(window.location.search));
 }
 
 const errors = {

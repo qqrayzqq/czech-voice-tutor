@@ -25,5 +25,5 @@ class User(Base):
     telegram_user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
     username: Mapped[str | None] = mapped_column(Text)
     language_level: Mapped[str | None] = mapped_column(Text)
-    response_mode: Mapped[str] = mapped_column(Text, server_default="text")
+    response_mode: Mapped[str] = mapped_column(Text, server_default="voice")
     answer_length: Mapped[str] = mapped_column(Text, server_default="short")

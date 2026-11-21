@@ -12,14 +12,18 @@ def build_feedback_keyboard(
     reply_id: int,
     corrections_count: int,
     has_note: bool = False,
+    *,
+    include_reply: bool = False,
 ) -> InlineKeyboardMarkup | None:
     """Build a WebApp button using a page URL without query parameters or a fragment."""
-    if not mini_app_url or (corrections_count == 0 and not has_note):
+    if not mini_app_url or (corrections_count == 0 and not has_note and not include_reply):
         return None
 
-    url = f"{mini_app_url}?reply_id={reply_id}"
+    url = f"{mini_app_url}?reply_id={reply_id}" + ("&tab=reply" if include_reply else "")
     web_app = WebAppInfo(url=url)
-    if corrections_count == 0 and has_note:
+    if include_reply:
+        button = InlineKeyboardButton(text="📖 Текст ответа и разбор", web_app=web_app)
+    elif corrections_count == 0 and has_note:
         button = InlineKeyboardButton(
             text="📖 Пояснение",
             web_app=web_app,
