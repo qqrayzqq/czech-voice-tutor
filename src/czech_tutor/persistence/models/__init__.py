@@ -4,10 +4,12 @@ from czech_tutor.persistence.models.base import Base
 from czech_tutor.persistence.models.conversation import Conversation
 from czech_tutor.persistence.models.correction import MessageCorrection
 from czech_tutor.persistence.models.message import Message
+from czech_tutor.persistence.models.reply_audio import ReplyAudio
 from czech_tutor.persistence.models.user import User
 from czech_tutor.persistence.models.voice_job import VoiceEditInput, VoiceJob
 
 __all__ = [
+    "ReplyAudio",
     "Base",
     "Conversation",
     "Message",
