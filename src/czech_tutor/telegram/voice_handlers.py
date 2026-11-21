@@ -1,7 +1,9 @@
 """Telegram presentation for persisted voice input and reply recovery."""
 
+import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from io import BytesIO
 
@@ -64,6 +66,42 @@ class _LimitedBuffer(BytesIO):
         if self.tell() + len(data) > MAX_VOICE_BYTES:
             raise _VoiceFileTooLarge
         return super().write(data)
+
+
+
+@asynccontextmanager
+async def record_voice_action(
+    bot: Bot, chat_id: int, *, interval: float = 4.5
+) -> AsyncIterator[None]:
+    try:
+        await bot.send_chat_action(chat_id=chat_id, action="record_voice")
+    except Exception:
+        pass
+
+    stop_event = asyncio.Event()
+
+    async def _pulse() -> None:
+        while not stop_event.is_set():
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=interval)
+            except TimeoutError:
+                pass
+            if not stop_event.is_set():
+                try:
+                    await bot.send_chat_action(chat_id=chat_id, action="record_voice")
+                except Exception:
+                    pass
+
+    task = asyncio.create_task(_pulse())
+    try:
+        yield
+    finally:
+        stop_event.set()
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
 
 
 def voice_confirmation_text(text: str, language: str = "ru") -> str:
@@ -378,16 +416,17 @@ def register_voice_handlers(
             )
             return
         try:
-            voice = await actions.process(
-                message.from_user.id,
-                message.from_user.username,
-                message.chat.id,
-                message.message_id,
-                message.voice.file_id,
-                audio_bytes,
-            )
-            if voice is not None and voice.status != "confirmed":
-                await present(message, voice, message.from_user.id)
+            async with record_voice_action(message.bot, message.chat.id):
+                voice = await actions.process(
+                    message.from_user.id,
+                    message.from_user.username,
+                    message.chat.id,
+                    message.message_id,
+                    message.voice.file_id,
+                    audio_bytes,
+                )
+                if voice is not None and voice.status != "confirmed":
+                    await present(message, voice, message.from_user.id)
         except ActiveVoiceJobError:
             await message.answer(ui("active", await locale(message.from_user.id)), parse_mode=None)
             try:
@@ -459,37 +498,38 @@ def register_voice_handlers(
                     except TelegramAPIError:
                         logger.warning("Failed to close voice card: job_id=%s", job_id)
 
-                guarded = getattr(actions, "confirm_with_cleanup", None)
-                if guarded is not None:
-                    result = await guarded(
-                        callback.from_user.id, job_id, revision, action == "recover", accepted
-                    )
-                else:
-                    result = await actions.confirm(
-                        callback.from_user.id, job_id, revision, action == "recover"
-                    )
-                if result is not None:
-                    if action == "confirm" and guarded is None:
-                        await _remove_markup(message)
-                        try:
-                            await message.edit_text(
-                                ui("submitted", await locale(callback.from_user.id)),
-                                parse_mode=None,
-                                reply_markup=None,
-                            )
-                        except TelegramAPIError:
-                            logger.warning("Failed to close voice card: job_id=%s", job_id)
-                    await _send_voice_reply(
-                        message,
-                        callback.from_user.id,
-                        result,
-                        actions,
-                        confirm_reply_sent,
-                        mini_app_url,
-                        speech_actions,
-                        notice_actions,
-                    )
-                    return
+                async with record_voice_action(message.bot, message.chat.id):
+                    guarded = getattr(actions, "confirm_with_cleanup", None)
+                    if guarded is not None:
+                        result = await guarded(
+                            callback.from_user.id, job_id, revision, action == "recover", accepted
+                        )
+                    else:
+                        result = await actions.confirm(
+                            callback.from_user.id, job_id, revision, action == "recover"
+                        )
+                    if result is not None:
+                        if action == "confirm" and guarded is None:
+                            await _remove_markup(message)
+                            try:
+                                await message.edit_text(
+                                    ui("submitted", await locale(callback.from_user.id)),
+                                    parse_mode=None,
+                                    reply_markup=None,
+                                )
+                            except TelegramAPIError:
+                                logger.warning("Failed to close voice card: job_id=%s", job_id)
+                        await _send_voice_reply(
+                            message,
+                            callback.from_user.id,
+                            result,
+                            actions,
+                            confirm_reply_sent,
+                            mini_app_url,
+                            speech_actions,
+                            notice_actions,
+                        )
+                        return
             else:
                 return
         except (InputTooLongError, EmptyVoiceTextError, LLMError, ASRError, StorageError) as error:
