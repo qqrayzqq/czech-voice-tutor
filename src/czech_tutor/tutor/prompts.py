@@ -53,7 +53,7 @@ _BASE_SYSTEM_PROMPT = (
     "No-correction mode applies in every field. Preserve correct variants and "
     "recoverable conversational ellipsis. A standard-Czech check corrects "
     "nonstandard forms, not acceptable wording for stylistic preference. Style "
-    "edits need an explicit style/tone request.\n\nEDIT PROCEDURE: Scan each "
+    "changes are optional advice, never errors; label them kind=advice.\n\nEDIT PROCEDURE: Scan each "
     "sentence, first grammar then remaining accent restoration, including the final "
     "word. Collect all required edits before drafting reply_cs. Reply length/level "
     "never limits error count. corrections contains grammar/vocabulary/other "
@@ -170,19 +170,53 @@ _PREFERENCE_RULES = (
 )
 
 
-def build_system_prompt(language_level: str | None, answer_length: str) -> str:
+def build_system_prompt(
+    language_level: str | None, answer_length: str, interface_language: str = "ru"
+) -> str:
     """Build instructions from one saved preference snapshot."""
     if language_level not in _LEVEL_INSTRUCTIONS:
         raise ValueError("Unsupported learner language level.")
     if answer_length not in _LENGTH_INSTRUCTIONS:
         raise ValueError("Unsupported preferred reply length.")
+    if interface_language not in {"ru", "uk"}:
+        raise ValueError("Unsupported interface language.")
+    explanation_language = "Ukrainian" if interface_language == "uk" else "Russian"
+    base = _BASE_SYSTEM_PROMPT
+    reference = _CZECH_REFERENCE
+    preferences = _PREFERENCE_RULES
+    if interface_language == "uk":
+        # Legacy field names remain stable; their content follows the saved locale.
+        base = base.replace("Russian", "Ukrainian")
+        reference = reference.replace("Russian", "Ukrainian")
+        preferences = preferences.replace("Russian", "Ukrainian")
+    assessment_policy = (
+        f"EXPLANATION LANGUAGE: {explanation_language}. Set feedback_language="
+        f"{interface_language}. The legacy names note_ru and explanation_ru do NOT select "
+        f"their content language: every full explanation sentence must be {explanation_language}. "
+        "Czech quotations are allowed. reply_cs remains entirely Czech. Russian and Ukrainian "
+        "questions and instructions are both allowed input, never learner Czech mistakes. "
+        "ASSESSMENT: feedback_status=evaluated only when you actually assessed learner Czech. "
+        "Use not_evaluated for greetings, meta questions, translations, explicit no-corrections "
+        "requests, or tasks where there is no learner Czech to assess. No corrections or "
+        "diacritics when not_evaluated or clarification. clarification is for uncertain "
+        "voice understanding: one natural Czech clarifying question, no grading or praise. "
+        "Correction.kind=error for a genuine language mistake; kind=advice for an optional "
+        "more natural acceptable alternative. Never label correct wording as an error. "
+        "An ordinary explanatory note is not by itself advice or a mistake. Optional "
+        "naturalness suggestions belong in kind=advice only and must preserve meaning. "
+        "Set replaces_previous=true only when the learner explicitly says you misheard or "
+        "misunderstood their previous input and repairs that meaning; never for ordinary "
+        "grammar correction requests or a new conversation topic. Do not reconstruct "
+        "unheard speech as certainty."
+    )
     return "\n\n".join(
         (
-            _BASE_SYSTEM_PROMPT,
-            _CZECH_REFERENCE,
+            base,
+            reference,
             _LEVEL_INSTRUCTIONS[language_level],
             _LENGTH_INSTRUCTIONS[answer_length],
-            _PREFERENCE_RULES,
+            preferences,
+            assessment_policy,
         )
     )
 

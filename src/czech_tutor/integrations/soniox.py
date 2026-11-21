@@ -1,9 +1,11 @@
 import asyncio
 import logging
+from collections import Counter
+from dataclasses import dataclass
 from typing import Annotated, Literal
 
 import httpx
-from pydantic import BaseModel, ConfigDict, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from czech_tutor.tutor.errors import ASRError
 
@@ -33,9 +35,23 @@ class _StatusResponse(BaseModel):
     status: Literal["queued", "processing", "completed", "error"]
 
 
+class _TranscriptToken(BaseModel):
+    model_config = ConfigDict(extra="ignore", strict=True)
+    text: str = ""
+    language: str | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
+
+
+@dataclass(frozen=True)
+class Transcript:
+    text: str
+    metadata: dict[str, object]
+
+
 class _TranscriptResponse(BaseModel):
     model_config = ConfigDict(extra="ignore", strict=True)
     text: Annotated[str, StringConstraints(strict=True, strip_whitespace=True)]
+    tokens: list[_TranscriptToken] = Field(default_factory=list)
 
 
 class TranscriptionPending(ASRError):
@@ -136,7 +152,9 @@ async def fetch_transcript_text(
     client: httpx.AsyncClient,
     api_key: str,
     transcription_id: str,
-) -> str:
+    *,
+    detailed: bool = False,
+) -> str | Transcript:
     """Fetch a nonempty final transcript once the job has completed."""
     try:
         response = await client.get(
@@ -145,9 +163,25 @@ async def fetch_transcript_text(
             timeout=15.0,
         )
         response.raise_for_status()
-        text = _TranscriptResponse.model_validate(response.json()).text
+        transcript = _TranscriptResponse.model_validate(response.json())
+        text = transcript.text
         if not text:
             raise EmptyTranscript("Soniox returned an empty transcript.")
+        if detailed:
+            languages = Counter(
+                t.language for t in transcript.tokens if t.language and t.text.strip()
+            )
+            scores = [
+                t.confidence
+                for t in transcript.tokens
+                if t.confidence is not None and t.text.strip()
+            ]
+            metadata: dict[str, object] = {"languages": dict(languages)}
+            if scores:
+                metadata.update(
+                    mean_confidence=sum(scores) / len(scores), min_confidence=min(scores)
+                )
+            return Transcript(text, metadata)
         return text
     except (httpx.HTTPError, ValueError):
         raise ASRError("Failed to fetch transcript from Soniox.") from None
@@ -160,12 +194,13 @@ async def wait_for_transcript(
     *,
     max_poll_attempts: int = 20,
     poll_interval_sec: float = 0.5,
-) -> str:
+    detailed: bool = False,
+) -> str | Transcript:
     """Poll within a local budget without cancelling or deleting remote work."""
     for attempt in range(max_poll_attempts):
         status = await poll_transcription_status(client, api_key, transcription_id)
         if status == "completed":
-            return await fetch_transcript_text(client, api_key, transcription_id)
+            return await fetch_transcript_text(client, api_key, transcription_id, detailed=detailed)
         if status == "error":
             raise TranscriptionFailed("Soniox transcription failed on the server.")
         if attempt + 1 < max_poll_attempts:

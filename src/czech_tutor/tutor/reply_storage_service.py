@@ -17,6 +17,8 @@ async def reply_storage(
     session_factory: async_sessionmaker[AsyncSession],
     source_message_id: int,
     reply: TutorReply,
+    *,
+    replacement_target_id: int | None = None,
 ) -> Message:
     """Persist one generated reply with at most three storage attempts.
 
@@ -25,12 +27,24 @@ async def reply_storage(
     this service never calls the LLM or Telegram. A lost commit confirmation
     is reconciled by the idempotent save or the final
     read-only lookup. Recovery does not survive process termination.
+
+    An explicit replacement_target_id is the visible context snapshot taken
+    before generation. Zero means no visible target; None retains the legacy
+    standalone lookup. Preserve that exact value across all storage attempts.
     """
     last_error: Exception | None = None
     for attempt in range(3):
         try:
             async with session_factory.begin() as session:
-                saved = await save_tutor_reply(session, source_message_id, reply)
+                if replacement_target_id is None:
+                    saved = await save_tutor_reply(session, source_message_id, reply)
+                else:
+                    saved = await save_tutor_reply(
+                        session,
+                        source_message_id,
+                        reply,
+                        replacement_target_id=replacement_target_id,
+                    )
             return saved
         except (SQLAlchemyError, ValueError) as error:
             # SQLAlchemy explicitly reports a broken connection or pool timeout.

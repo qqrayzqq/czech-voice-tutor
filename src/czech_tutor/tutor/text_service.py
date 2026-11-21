@@ -6,14 +6,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from czech_tutor.integrations.openrouter import generate_reply
 from czech_tutor.persistence.conversations import get_or_create_conversation
-from czech_tutor.persistence.history import get_recent_turns
+from czech_tutor.persistence.history import get_latest_clarification, get_recent_turns
 from czech_tutor.persistence.messages import (
     mark_generation_failed,
     reserve_user_message,
+    supersede_clarification,
 )
 from czech_tutor.persistence.models import User
 from czech_tutor.persistence.users import upsert_user
-from czech_tutor.persistence.voice_jobs import find_voice_edit
+from czech_tutor.persistence.voice_jobs import abandon_clarification_draft, find_voice_edit
 from czech_tutor.tutor.context import trim_history
 from czech_tutor.tutor.errors import InputTooLongError, LLMError, StorageError
 from czech_tutor.tutor.prompts import build_system_prompt
@@ -66,6 +67,7 @@ async def process_text_message(
     if len(text) > MAX_INPUT_CHARS:
         raise InputTooLongError(max_chars=MAX_INPUT_CHARS)
 
+    clarification = None
     try:
         async with session_factory.begin() as session:
             learner: User = await upsert_user(session, telegram_user_id, username)
@@ -75,6 +77,7 @@ async def process_text_message(
                 return None
             language_level: str | None = learner.language_level
             answer_length: str = learner.answer_length
+            interface_language = getattr(learner, "interface_language", None) or "ru"
             conversation = await get_or_create_conversation(session, telegram_user_id)
             message_id = await reserve_user_message(
                 session,
@@ -84,8 +87,18 @@ async def process_text_message(
                 text,
             )
             if message_id is not None:
+                clarification = await get_latest_clarification(session, conversation.id, message_id)
+                conversation_id = conversation.id
+                await abandon_clarification_draft(session, telegram_user_id)
                 turns = await get_recent_turns(session, conversation.id, message_id)
                 history_texts = [(user.text, assistant.text) for user, assistant in turns]
+                replacement_target_id = (
+                    clarification[0]
+                    if clarification is not None
+                    else turns[-1][1].id
+                    if turns
+                    else 0
+                )
     except SQLAlchemyError as error:
         logger.warning(
             "Failed to prepare conversation: telegram_chat_id=%s telegram_message_id=%s",
@@ -97,11 +110,30 @@ async def process_text_message(
     if message_id is None:
         return None
 
+    if clarification is not None:
+        history_texts.append(
+            (
+                "[Previous voice input was unclear; no verified transcript.]",
+                clarification[1],
+            )
+        )
     history = trim_history(history_texts)
-    system_prompt = build_system_prompt(language_level, answer_length)
+    if not history:
+        replacement_target_id = 0
+    system_prompt = build_system_prompt(language_level, answer_length, interface_language)
+    if clarification is not None:
+        system_prompt += (
+            "\nPrevious clarification context is the final history pair. Its user text "
+            "is a safe placeholder, not learner speech. Treat the current input as a possible "
+            "answer to that question. Never reconstruct or grade the missing old transcript. "
+            "If the current input resolves the meaning, continue the conversation naturally; "
+            "otherwise ask one useful Czech clarification question without grading."
+        )
 
     try:
-        result = await generate_reply(client, api_key, text, system_prompt, history)
+        result = await generate_reply(
+            client, api_key, text, system_prompt, history, feedback_language=interface_language
+        )
     except LLMError:
         logger.warning("Failed to generate tutor reply: source_message_id=%s", message_id)
         try:
@@ -115,11 +147,25 @@ async def process_text_message(
             raise StorageError("Failed to record generation failure.") from error
         raise
 
-    reply = await reply_storage(session_factory, message_id, result)
+    reply = await reply_storage(
+        session_factory, message_id, result, replacement_target_id=replacement_target_id
+    )
+    if clarification is not None and result.feedback_status != "clarification":
+        try:
+            async with session_factory.begin() as session:
+                await supersede_clarification(session, conversation_id, clarification[0])
+        except SQLAlchemyError as error:
+            logger.warning("Failed to withdraw clarified feedback: reply_id=%s", clarification[0])
+            raise StorageError("Failed to withdraw clarified feedback.") from error
 
     return ReplyToSend(
         reply_id=reply.id,
         reply_cs=reply.text,
-        corrections_count=len(result.corrections) + int(bool(result.diacritics)),
+        corrections_count=sum(c.kind == "error" for c in result.corrections)
+        + int(bool(result.diacritics)),
+        advice_count=sum(c.kind == "advice" for c in result.corrections),
+        feedback_status=result.feedback_status,
+        feedback_language=interface_language,
+        interface_language=interface_language,
         has_note=bool(reply.note_ru and reply.note_ru.strip()),
     )
