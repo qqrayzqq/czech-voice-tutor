@@ -2,6 +2,10 @@ class LLMError(RuntimeError):
     """A tutor reply could not be generated or validated."""
 
 
+class TTSError(RuntimeError):
+    """Speech is unavailable; the saved text may still be delivered."""
+
+
 class ASRError(RuntimeError):
     """Voice transcription could not be completed."""
 
