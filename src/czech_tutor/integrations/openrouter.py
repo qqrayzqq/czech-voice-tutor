@@ -8,7 +8,10 @@ def build_request_payload(
     user_text: str,
     system_prompt: str,
     history: list[tuple[str, str]],
+    feedback_language: str = "ru",
 ) -> dict[str, object]:
+    if feedback_language not in {"ru", "uk"}:
+        raise ValueError("Unsupported feedback language.")
     res: dict[str, object] = {}
     res["model"] = "openai/gpt-6-luna"
     res["provider"] = {
@@ -27,6 +30,18 @@ def build_request_payload(
             "schema": {
                 "type": "object",
                 "properties": {
+                    "feedback_status": {
+                        "type": "string",
+                        "enum": ["evaluated", "not_evaluated", "clarification"],
+                        "description": (
+                            "Whether learner Czech was assessed or voice needs clarification."
+                        ),
+                    },
+                    "feedback_language": {"type": "string", "enum": [feedback_language]},
+                    "replaces_previous": {
+                        "type": "boolean",
+                        "description": "Explicit repair of previously misheard input only.",
+                    },
                     "reply_cs": {
                         "type": "string",
                         "pattern": r"\S",
@@ -38,7 +53,8 @@ def build_request_payload(
                     "note_ru": {
                         "type": "string",
                         "description": (
-                            "Explanation in Russian. Czech quotations allowed. "
+                            "Explanation in the saved ru/uk profile language. "
+                            "Czech quotations allowed. "
                             "Empty if not needed or already explained in corrections."
                         ),
                     },
@@ -50,6 +66,7 @@ def build_request_payload(
                         "items": {
                             "type": "object",
                             "properties": {
+                                "kind": {"type": "string", "enum": ["error", "advice"]},
                                 "original": {
                                     "type": "string",
                                     "description": (
@@ -65,11 +82,12 @@ def build_request_payload(
                                 "explanation_ru": {
                                     "type": "string",
                                     "description": (
-                                        "Brief explanation in Russian; Czech quotations allowed."
+                                        "Brief explanation in the saved ru/uk language; "
+                                        "Czech quotations allowed."
                                     ),
                                 },
                             },
-                            "required": ["original", "corrected", "explanation_ru"],
+                            "required": ["original", "corrected", "explanation_ru", "kind"],
                             "additionalProperties": False,
                         },
                     },
@@ -89,7 +107,15 @@ def build_request_payload(
                         },
                     },
                 },
-                "required": ["reply_cs", "note_ru", "corrections", "diacritics"],
+                "required": [
+                    "reply_cs",
+                    "note_ru",
+                    "corrections",
+                    "diacritics",
+                    "feedback_status",
+                    "feedback_language",
+                    "replaces_previous",
+                ],
                 "additionalProperties": False,
             },
         },
@@ -149,13 +175,22 @@ async def generate_reply(
     user_text: str,
     system_prompt: str,
     history: list[tuple[str, str]],
+    *,
+    feedback_language: str = "ru",
 ) -> TutorReply:
-    payload = build_request_payload(user_text, system_prompt, history)
+    payload = build_request_payload(user_text, system_prompt, history, feedback_language)
 
     try:
         response = await send_request(client, api_key, payload)
         raw_text = extract_reply(response)
         tutor_reply = parse_tutor_reply(raw_text)
+        metadata = {"feedback_language", "feedback_status", "replaces_previous"}
+        if not metadata.issubset(tutor_reply.model_fields_set):
+            raise ValueError("Model response is missing assessment metadata.")
+        if tutor_reply.feedback_language != feedback_language:
+            raise ValueError("Model response has an unexpected feedback language.")
+        if any("kind" not in correction.model_fields_set for correction in tutor_reply.corrections):
+            raise ValueError("Model response is missing correction kinds.")
         return clean_tutor_reply(tutor_reply, user_text)
     except (httpx.HTTPError, ValueError) as error:
         raise LLMError("Failed to generate a tutor reply.") from error

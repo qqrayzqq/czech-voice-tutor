@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from czech_tutor.integrations.soniox import (
     EmptyTranscript,
+    Transcript,
     TranscriptionFailed,
     TranscriptionPending,
     cleanup_transcription,
@@ -43,6 +44,13 @@ CLEANUP_SECONDS = 3
 
 
 def _snapshot(job: VoiceJob, *, can_recover: bool = False) -> VoiceInput:
+    now = datetime.now(UTC)
+    card_lease_until = (
+        job.card_lease_until.replace(tzinfo=UTC)
+        if (job.card_lease_until and job.card_lease_until.tzinfo is None)
+        else job.card_lease_until
+    )
+    lease_active = bool(card_lease_until and card_lease_until > now)
     return VoiceInput(
         job.id,
         job.status,
@@ -50,6 +58,9 @@ def _snapshot(job: VoiceJob, *, can_recover: bool = False) -> VoiceInput:
         job.revision,
         job.failure_reason,
         can_recover,
+        card_message_id=job.card_message_id,
+        clarification_count=job.clarification_count,
+        card_lease_active=lease_active,
     )
 
 
@@ -59,7 +70,7 @@ async def _read(session_factory: SessionFactory, user_id: int, job_id: int) -> V
         if job is None or job.telegram_user_id != user_id:
             return None
         can_recover = False
-        if job.status == "confirmed" and job.source_message_id:
+        if job.status in {"confirmed", "awaiting_edit"} and job.source_message_id:
             reply = await get_tutor_reply(session, job.source_message_id)
             can_recover = reply is not None and reply.telegram_message_id is None
             if reply is None:
@@ -74,7 +85,11 @@ async def _read(session_factory: SessionFactory, user_id: int, job_id: int) -> V
                         return replace(_snapshot(job), failure_reason="generation_failed")
                     if created < datetime.now(UTC) - timedelta(minutes=2):
                         return replace(_snapshot(job), failure_reason="generation_interrupted")
-        return _snapshot(job, can_recover=can_recover)
+        learner = await session.get(User, user_id)
+        return replace(
+            _snapshot(job, can_recover=can_recover),
+            interface_language=learner.interface_language if learner else "ru",
+        )
 
 
 async def _cleanup_job(
@@ -123,7 +138,9 @@ async def _poll_job(
         return await _read(session_factory, user_id, job.id)
     try:
         async with asyncio.timeout(ASR_POLL_SECONDS):
-            transcript = await wait_for_transcript(client, api_key, job.soniox_transcription_id)
+            transcript = await wait_for_transcript(
+                client, api_key, job.soniox_transcription_id, detailed=True
+            )
     except (TranscriptionPending, TimeoutError):
         return await _read(session_factory, user_id, job.id)
     except EmptyTranscript:
@@ -133,9 +150,15 @@ async def _poll_job(
             await jobs.mark_voice_job_failed(session, job.id)
         await _cleanup_for_user(session_factory, client, api_key, user_id)
         return await _read(session_factory, user_id, job.id)
+    metadata = transcript.metadata if isinstance(transcript, Transcript) else None
+    transcript = transcript.text if isinstance(transcript, Transcript) else transcript
     # A transport/schema error leaves the external ID intact for a safe future read.
     async with session_factory.begin() as session:
         changed = await jobs.save_voice_job_transcript(session, job.id, transcript)
+        if changed and metadata is not None:
+            await session.execute(
+                update(VoiceJob).where(VoiceJob.id == job.id).values(asr_metadata=metadata)
+            )
         if changed and (not transcript.strip() or len(transcript) > MAX_VOICE_TEXT_CHARS):
             await session.execute(
                 update(VoiceJob)
@@ -182,6 +205,7 @@ async def process_voice_message(
             )
             if existing is not None:
                 return _snapshot(existing)
+            await jobs.abandon_clarification_draft(session, telegram_user_id)
             active = await jobs.get_active_voice_job(session, telegram_user_id)
             if active is not None:
                 raise ActiveVoiceJobError("User already has an active voice job.")
@@ -321,7 +345,11 @@ async def submit_voice_edit(
                 return _snapshot(job) if job and job.telegram_user_id == telegram_user_id else None
             await jobs.expire_voice_jobs(session, telegram_user_id)
             job = await jobs.get_active_voice_job(session, telegram_user_id)
-            if job is None or job.status != "awaiting_edit":
+            if (
+                job is None
+                or job.status != "awaiting_edit"
+                or job.failure_reason == "clarification"
+            ):
                 return None
             ordinary = await session.execute(
                 select(Message.id).where(

@@ -1,7 +1,9 @@
-import { buildMiniAppLink, initializeMiniApp } from './mini-app-ui.mjs';
+import { initializeLocalization, setLanguage, t, onLanguageChange } from './localization.mjs';
+import { initializeMiniApp } from './mini-app-ui.mjs';
 import { createProfilePreferences } from './profile-state.mjs';
-import { loadProfile, updateAnswerLength, updateLanguageLevel, updateResponseMode } from './profile-client.mjs';
+import { loadProfile, updateAnswerLength, updateLanguageLevel, updateResponseMode, updateInterfaceLanguage } from './profile-client.mjs';
 
+initializeLocalization();
 const byId = id => document.getElementById(id);
 const params = new URLSearchParams(window.location.search);
 const demo = params.get('demo') === '1';
@@ -9,12 +11,13 @@ const previewState = demo ? params.get('state') : null;
 let preferences;
 function setPreferences(settings = {}) {
   const profile = createProfilePreferences(settings);
-  preferences = { level: profile.languageLevel, length: profile.answerLength, mode: profile.responseMode };
+  preferences = { level: profile.languageLevel, length: profile.answerLength, mode: profile.responseMode, locale: profile.interfaceLanguage };
 }
-setPreferences();
+setPreferences(demo ? { interface_language: params.get('lang') === 'uk' ? 'uk' : 'ru' } : {});
 const radios = {
   level: [...document.querySelectorAll('input[name="language_level"]')],
   length: [...document.querySelectorAll('input[name="answer_length"]')],
+  locale: [...document.querySelectorAll('input[name="interface_language"]')],
 };
 const levelHints = {
   A1: 'В разговоре — простые слова, короткие фразы и знакомые темы.',
@@ -33,16 +36,14 @@ const lengthNames = { short: 'короткие', medium: 'средние', long:
 const failNextSave = {
   level: ['save-error', 'level-save-error'].includes(previewState),
   length: previewState === 'length-save-error',
+  locale: previewState === 'locale-save-error',
 };
 let loading = false;
 let ready = false;
+let menuUpdated;
 
 const telegram = initializeMiniApp();
-byId('feedback-link').href = buildMiniAppLink('', window.location.search);
-const demoParams = new URLSearchParams(buildMiniAppLink('profile.html', window.location.search).split('?')[1]);
-demoParams.set('demo', '1');
-byId('profile-demo-link').href = `?${demoParams}`;
-
+byId('profile-demo-link').href = '?demo=1';
 const textResponseToggle = byId('text-response-toggle');
 textResponseToggle.addEventListener('change', () => {
   selectPreference('mode', textResponseToggle.checked ? 'text' : 'voice');
@@ -50,12 +51,21 @@ textResponseToggle.addEventListener('change', () => {
 
 function renderPreference(key) {
   const preference = preferences[key];
+  if (key === 'locale') {
+    radios.locale.forEach(radio => { radio.checked = radio.value === preference.selectedValue; radio.disabled = preference.saving; });
+    byId('locale-fieldset').setAttribute('aria-busy', String(preference.saving));
+    byId('locale-save-error').hidden = !preference.error;
+    byId('locale-status').textContent = preference.saving ? t('Сохраняем…')
+      : preference.error ? '' : t(demo ? 'Язык выбран в демо.' : menuUpdated === false
+        ? 'Язык сохранён. Если меню Telegram осталось прежним, открой чат заново.' : 'Язык сохранён.');
+    return;
+  }
   if (key === 'mode') {
     textResponseToggle.checked = preference.selectedValue === 'text';
     textResponseToggle.disabled = preference.saving;
-    byId('response-mode-status').textContent = preference.saving ? 'Сохраняем…'
-      : preference.error ? 'Сохранение не подтверждено. Повтори попытку.'
-      : `${demo ? 'В демо выбран' : 'Сохранён'} ${preference.savedValue === 'text' ? 'текстовый' : 'голосовой'} ответ.`;
+    byId('response-mode-status').textContent = preference.saving ? t('Сохраняем…')
+      : preference.error ? t('Сохранение не подтверждено. Повтори попытку.')
+      : t(demo ? preference.savedValue === 'text' ? 'В демо выбран текстовый ответ.' : 'В демо выбран голосовой ответ.' : preference.savedValue === 'text' ? 'Сохранён текстовый ответ.' : 'Сохранён голосовой ответ.');
     byId('mode-save-error').hidden = !preference.error;
     return;
   }
@@ -68,22 +78,22 @@ function renderPreference(key) {
   const status = byId(`${key}-status`);
   status.classList.toggle('is-confirmed', preference.confirmed);
   if (preference.saving) {
-    status.textContent = demo ? 'Применяем выбор в демо…' : 'Сохраняем…';
+    status.textContent = t(demo ? 'Применяем выбор в демо…' : 'Сохраняем…');
   } else if (preference.error) {
-    status.textContent = demo ? 'Выбор пока не применён.' : 'Сохранение не подтверждено.';
+    status.textContent = t(demo ? 'Выбор пока не применён.' : 'Сохранение не подтверждено.');
   } else if (key === 'level') {
     status.textContent = preference.savedValue
-      ? `${demo ? 'В демо выбран' : 'Сохранён'} уровень ${preference.savedValue}.`
-      : 'Нажми на уровень — он выберется сразу.';
+      ? t(demo ? 'В демо выбран уровень {level}.' : 'Сохранён уровень {level}.', { level: preference.savedValue })
+      : t('Нажми на уровень — он выберется сразу.');
   } else {
-    status.textContent = `${demo ? 'В демо выбраны' : 'Сохранены'} ${lengthNames[preference.savedValue]} ответы.`;
+    status.textContent = t(demo ? 'В демо выбраны {length} ответы.' : 'Сохранены {length} ответы.', { length: t(lengthNames[preference.savedValue]) });
   }
   if (key === 'level') {
-    byId('current-level').textContent = preference.savedValue ? `Уровень ${preference.savedValue}` : 'Уровень не выбран';
+    byId('current-level').textContent = preference.savedValue ? t('Уровень {level}', { level: preference.savedValue }) : t('Уровень не выбран');
     byId('current-level').classList.toggle('has-level', Boolean(preference.savedValue));
-    if (preference.selectedValue) byId('level-hint').textContent = levelHints[preference.selectedValue];
+    if (preference.selectedValue) byId('level-hint').textContent = t(levelHints[preference.selectedValue]);
   } else {
-    byId('length-hint').textContent = lengthHints[preference.selectedValue];
+    byId('length-hint').textContent = t(lengthHints[preference.selectedValue]);
   }
 }
 
@@ -97,12 +107,15 @@ async function selectPreference(key, value) {
         throw new Error('Synthetic profile preference save failure');
       }
     } else {
-      const save = { level: updateLanguageLevel, length: updateAnswerLength, mode: updateResponseMode }[key];
-      await save(selected, telegram.initData);
+      const save = { level: updateLanguageLevel, length: updateAnswerLength, mode: updateResponseMode, locale: updateInterfaceLanguage }[key];
+      const result = await save(selected, telegram.initData);
+      if (key === 'locale') menuUpdated = result.menu_updated;
     }
   });
+  if (key === 'locale') setLanguage(preferences.locale.selectedValue);
   renderPreference(key);
   await pending;
+  if (key === 'locale') setLanguage(preferences.locale.selectedValue);
   renderPreference(key);
 }
 
@@ -125,7 +138,9 @@ async function showProfile({ showError = false, keepLoading = false } = {}) {
         byId('profile-unavailable').hidden = false;
         return;
       }
-      setPreferences(await loadProfile(telegram.initData));
+      const settings = await loadProfile(telegram.initData);
+      setPreferences(settings);
+      setLanguage(settings.interface_language);
     }
     byId('profile-demo-notice').hidden = !demo;
     byId('profile-live-notice').hidden = demo;
@@ -137,8 +152,8 @@ async function showProfile({ showError = false, keepLoading = false } = {}) {
       unauthorized: 'Сессия истекла или доступ недоступен. Закрой мини-приложение и открой его снова из Telegram.',
       'not-found': 'Твой профиль пока не найден. Вернись в чат с ботом.',
     };
-    byId('profile-load-error-message').textContent = messages[error.code]
-      || 'Не удалось загрузить настройки. Попробуй ещё раз немного позже.';
+    byId('profile-load-error-message').textContent = t(messages[error.code]
+      || 'Не удалось загрузить настройки. Попробуй ещё раз немного позже.');
     byId('profile-load-error').hidden = false;
   } finally {
     if (!(demo && keepLoading)) {
@@ -161,12 +176,14 @@ Object.keys(radios).forEach(key => {
       }
     });
   });
-  byId(`${key}-retry`).addEventListener('click', () => {
+  if (key !== 'locale') byId(`${key}-retry`).addEventListener('click', () => {
     selectPreference(key, preferences[key].selectedValue);
   });
 });
 
 byId('mode-retry').addEventListener('click', () => selectPreference('mode', preferences.mode.selectedValue));
 
+const stopLocaleUpdates = onLanguageChange(() => Object.keys(preferences).forEach(renderPreference));
+window.addEventListener('pagehide', stopLocaleUpdates);
 byId('profile-retry').addEventListener('click', () => showProfile());
 showProfile({ showError: previewState === 'error', keepLoading: previewState === 'loading' });

@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+DIACRITICS_EXPLANATION_UK = "Виправлено пропущені або неправильні діакритичні знаки."
+
 DIACRITICS_EXPLANATION_RU = "Исправлены пропущенные или неверные диакритические знаки."
 
 
@@ -31,6 +33,7 @@ class Correction(BaseModel):
     original: str
     corrected: str
     explanation_ru: str = ""
+    kind: Literal["error", "advice"] = "error"
 
 
 class TutorReply(BaseModel):
@@ -48,6 +51,9 @@ class TutorReply(BaseModel):
     note_ru: str
     corrections: list[Correction]
     diacritics: list[ShortEdit] = Field(default_factory=list)
+    feedback_status: Literal["evaluated", "not_evaluated", "clarification"] = "evaluated"
+    feedback_language: Literal["ru", "uk"] = "ru"
+    replaces_previous: bool = False
 
     @field_validator("reply_cs")
     @classmethod
@@ -73,6 +79,12 @@ class ReplyToSend(BaseModel):
     reply_cs: str
     corrections_count: int
     has_note: bool = False
+    advice_count: int = 0
+    feedback_status: Literal["evaluated", "not_evaluated", "clarification", "superseded"] = (
+        "evaluated"
+    )
+    feedback_language: Literal["ru", "uk"] = "ru"
+    interface_language: Literal["ru", "uk"] = "ru"
 
 
 class ReplyFeedback(BaseModel):
@@ -90,6 +102,12 @@ class ReplyFeedback(BaseModel):
     reply_cs: str
     note_ru: str
     corrections: list[Correction]
+    advice_count: int = 0
+    feedback_status: Literal["evaluated", "not_evaluated", "clarification", "superseded"] = (
+        "evaluated"
+    )
+    feedback_language: Literal["ru", "uk"] = "ru"
+    interface_language: Literal["ru", "uk"] = "ru"
 
 
 class ProfileSettings(BaseModel):
@@ -104,6 +122,14 @@ class ProfileSettings(BaseModel):
     language_level: Literal["A1", "A2", "B1", "B2", "C1", "C2"] | None
     answer_length: Literal["short", "medium", "long"]
     response_mode: Literal["text", "voice"]
+    interface_language: Literal["ru", "uk"] = "ru"
+
+
+class UpdateInterfaceLanguage(BaseModel):
+    """Persist the authenticated learner's interface/explanation language."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+    interface_language: Literal["ru", "uk"]
 
 
 class UpdateResponseMode(BaseModel):
@@ -149,6 +175,14 @@ def clean_tutor_reply(reply: TutorReply, latest_text: str) -> TutorReply:
     This validates structure only. It does not decide whether Czech grammar is
     correct or reconstruct edits omitted by the model.
     """
+    if reply.feedback_status != "evaluated":
+        return reply.model_copy(
+            update={
+                "corrections": [],
+                "diacritics": [],
+                "note_ru": "" if reply.feedback_status == "clarification" else reply.note_ru,
+            }
+        )
     corrections: list[Correction] = []
     seen: dict[tuple[str, str], int] = {}
     for edit in reply.corrections:
@@ -181,12 +215,16 @@ def clean_tutor_reply(reply: TutorReply, latest_text: str) -> TutorReply:
     return reply.model_copy(update={"corrections": corrections, "diacritics": diacritics})
 
 
-def build_diacritics_correction(edits: list[ShortEdit]) -> Correction | None:
+def build_diacritics_correction(
+    edits: list[ShortEdit], feedback_language: str = "ru"
+) -> Correction | None:
     """Turn short accent pairs into one compact persisted/UI correction card."""
     if not edits:
         return None
     return Correction(
         original=" · ".join(edit.original for edit in edits),
         corrected=" · ".join(edit.corrected for edit in edits),
-        explanation_ru=DIACRITICS_EXPLANATION_RU,
+        explanation_ru=(
+            DIACRITICS_EXPLANATION_UK if feedback_language == "uk" else DIACRITICS_EXPLANATION_RU
+        ),
     )

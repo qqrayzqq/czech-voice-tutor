@@ -20,11 +20,13 @@ from czech_tutor.persistence.connection import (
     create_session_factory,
 )
 from czech_tutor.telegram.bootstrap import create_dispatcher
+from czech_tutor.telegram.menu import set_profile_menu
 from czech_tutor.tutor.errors import StorageError
 from czech_tutor.tutor.feedback_service import load_reply_feedback
 from czech_tutor.tutor.profile_service import (
     load_profile,
     save_answer_length,
+    save_interface_language,
     save_language_level,
     save_response_mode,
 )
@@ -32,6 +34,7 @@ from czech_tutor.tutor.schemas import (
     ProfileSettings,
     ReplyFeedback,
     UpdateAnswerLength,
+    UpdateInterfaceLanguage,
     UpdateLanguageLevel,
     UpdateResponseMode,
 )
@@ -183,6 +186,26 @@ def create_app() -> FastAPI:
             raise HTTPException(503, detail="Profile is temporarily unavailable.") from None
         if saved is None:
             raise HTTPException(404, detail="Profile not found.")
+        return saved
+
+    @app.patch("/api/profile/interface-language")
+    async def patch_interface_language(
+        preference: UpdateInterfaceLanguage,
+        request: Request,
+        telegram_user_id: Annotated[int, Depends(get_current_user_id)],
+    ) -> UpdateInterfaceLanguage:
+        try:
+            async with request.app.state.session_factory.begin() as session:
+                saved = await save_interface_language(session, telegram_user_id, preference)
+        except SQLAlchemyError:
+            logger.warning("Failed to save profile preference: interface_language")
+            raise HTTPException(503, detail="Profile is temporarily unavailable.") from None
+        if saved is None:
+            raise HTTPException(404, detail="Profile not found.")
+        await set_profile_menu(
+            getattr(request.app.state, "bot", None), telegram_user_id,
+            getattr(request.app.state.settings, "mini_app_url", None), saved.interface_language,
+        )
         return saved
 
     return app

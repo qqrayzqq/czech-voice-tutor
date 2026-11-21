@@ -3,12 +3,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from czech_tutor.persistence.users import (
     get_user,
     update_answer_length,
+    update_interface_language,
     update_language_level,
     update_response_mode,
 )
 from czech_tutor.tutor.schemas import (
     ProfileSettings,
     UpdateAnswerLength,
+    UpdateInterfaceLanguage,
     UpdateLanguageLevel,
     UpdateResponseMode,
 )
@@ -27,6 +29,7 @@ async def load_profile(
         language_level=user.language_level,
         answer_length=user.answer_length,
         response_mode=user.response_mode,
+        interface_language=getattr(user, "interface_language", None) or "ru",
     )
 
 
@@ -60,5 +63,17 @@ async def save_response_mode(
     preference: UpdateResponseMode,
 ) -> UpdateResponseMode | None:
     if not await update_response_mode(session, telegram_user_id, preference.response_mode):
+        return None
+    return preference
+
+
+async def save_interface_language(
+    session: AsyncSession,
+    telegram_user_id: int,
+    preference: UpdateInterfaceLanguage,
+) -> UpdateInterfaceLanguage | None:
+    if not await update_interface_language(
+        session, telegram_user_id, preference.interface_language
+    ):
         return None
     return preference

@@ -1,3 +1,4 @@
+import secrets
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import and_, or_, select, update
@@ -197,10 +198,17 @@ async def request_voice_edit(
         .where(
             VoiceJob.id == job_id,
             VoiceJob.telegram_user_id == user_id,
-            VoiceJob.status == "awaiting_confirmation",
+            or_(
+                VoiceJob.status == "awaiting_confirmation",
+                and_(
+                    VoiceJob.status == "awaiting_edit", VoiceJob.failure_reason == "clarification"
+                ),
+            ),
             VoiceJob.revision == revision,
         )
-        .values(status="awaiting_edit", revision=VoiceJob.revision + 1)
+        .values(
+            status="awaiting_edit", failure_reason="manual_edit", revision=VoiceJob.revision + 1
+        )
         .returning(VoiceJob.id)
     )
     return result.scalar_one_or_none() is not None
@@ -330,10 +338,131 @@ async def get_undelivered_voice_jobs(session: AsyncSession, user_id: int) -> lis
         )
         .where(
             VoiceJob.telegram_user_id == user_id,
-            VoiceJob.status == "confirmed",
+            VoiceJob.status.in_(("confirmed", "awaiting_edit")),
             Message.telegram_message_id.is_(None),
         )
         .order_by(VoiceJob.id)
         .limit(5)
     )
     return list(result.scalars())
+
+
+async def abandon_clarification_draft(session: AsyncSession, user_id: int) -> None:
+    """A new conversational input supersedes optional fallback controls."""
+    await session.execute(
+        update(VoiceJob)
+        .where(
+            VoiceJob.telegram_user_id == user_id,
+            VoiceJob.status == "awaiting_edit",
+            VoiceJob.failure_reason == "clarification",
+        )
+        .values(status="cancelled", revision=VoiceJob.revision + 1)
+    )
+
+
+async def remember_voice_card(
+    session: AsyncSession,
+    user_id: int,
+    job_id: int,
+    message_id: int,
+    *,
+    token: str | None = None,
+) -> bool:
+    """Store the delivered Telegram message ID, bound to the matching reservation token."""
+    conditions = [
+        VoiceJob.id == job_id,
+        VoiceJob.telegram_user_id == user_id,
+    ]
+    if token is not None:
+        conditions.append(VoiceJob.card_token == token)
+    result = await session.execute(
+        update(VoiceJob)
+        .where(*conditions)
+        .values(
+            card_message_id=message_id,
+            card_token=None,
+            card_lease_until=None,
+        )
+        .returning(VoiceJob.id)
+        .execution_options(synchronize_session=False)
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def claim_voice_card(
+    session: AsyncSession,
+    user_id: int,
+    job_id: int,
+    expected_message_id: int | None,
+    *,
+    allow_recovery: bool = False,
+) -> str | None:
+    """Reserve one card POST with a 90-second lease token; zero denotes an in-flight creation."""
+    now = datetime.now(UTC)
+    token = secrets.token_hex(16)
+    if expected_message_id == 0:
+        if not allow_recovery:
+            return None
+        condition = and_(
+            VoiceJob.card_message_id == 0,
+            or_(VoiceJob.card_lease_until.is_(None), VoiceJob.card_lease_until < now),
+        )
+    elif expected_message_id is None:
+        if allow_recovery:
+            condition = or_(
+                VoiceJob.card_message_id.is_(None),
+                and_(
+                    VoiceJob.card_message_id == 0,
+                    or_(VoiceJob.card_lease_until.is_(None), VoiceJob.card_lease_until < now),
+                ),
+            )
+        else:
+            condition = VoiceJob.card_message_id.is_(None)
+    else:
+        if not allow_recovery:
+            return None
+        condition = VoiceJob.card_message_id == expected_message_id
+
+    result = await session.execute(
+        update(VoiceJob)
+        .where(
+            VoiceJob.id == job_id,
+            VoiceJob.telegram_user_id == user_id,
+            condition,
+        )
+        .values(
+            card_message_id=0,
+            card_token=token,
+            card_lease_until=now + timedelta(seconds=90),
+        )
+        .returning(VoiceJob.id)
+        .execution_options(synchronize_session=False)
+    )
+    if result.scalar_one_or_none() is not None:
+        return token
+    return None
+
+
+async def release_voice_card(
+    session: AsyncSession,
+    user_id: int,
+    job_id: int,
+    token: str,
+) -> bool:
+    """Release reservation when card creation is definitively rejected by Telegram."""
+    result = await session.execute(
+        update(VoiceJob)
+        .where(
+            VoiceJob.id == job_id,
+            VoiceJob.telegram_user_id == user_id,
+            VoiceJob.card_token == token,
+        )
+        .values(
+            card_message_id=None,
+            card_token=None,
+            card_lease_until=None,
+        )
+        .returning(VoiceJob.id)
+        .execution_options(synchronize_session=False)
+    )
+    return result.scalar_one_or_none() is not None

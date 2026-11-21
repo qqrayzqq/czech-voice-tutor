@@ -34,10 +34,7 @@
       </div>
     </header>
 
-    <nav class="page-nav" aria-label="Разделы приложения">
-      <a id="feedback-link" class="page-nav-link" href="./">Разбор</a>
-      <span class="page-nav-link" aria-current="page">Профиль</span>
-    </nav>
+
 
     <main id="main-content" aria-busy="true">
       <section class="hero profile-hero" aria-labelledby="page-title">
@@ -74,6 +71,18 @@
         <div id="profile-demo-notice" class="preview-notice"><svg class="icon" aria-hidden="true"><use href="#icon-info"/></svg><p><strong>Демо профиля</strong><span>Можно попробовать настройки. Настройки бота не изменятся.</span></p></div>
         <div id="profile-live-notice" class="preview-notice" hidden><svg class="icon" aria-hidden="true"><use href="#icon-info"/></svg><p><strong>Твои настройки</strong><span>Уровень, длина и формат сохраняются для следующих ответов бота.</span></p></div>
 
+        <section class="profile-card" aria-labelledby="interface-language-title">
+          <fieldset id="locale-fieldset">
+            <legend id="interface-language-title">Язык интерфейса и объяснений</legend>
+            <p class="profile-description">Новые объяснения будут на выбранном языке. Сохранённые разборы останутся на исходном.</p>
+            <div class="language-options">
+              <label class="level-option"><input type="radio" name="interface_language" value="ru" checked><span class="level-option-body" lang="ru">Русский</span></label>
+              <label class="level-option"><input type="radio" name="interface_language" value="uk"><span class="level-option-body" lang="uk">Українська</span></label>
+            </div>
+          </fieldset>
+          <p id="locale-status" class="preference-status" role="status" aria-live="polite"></p>
+          <div id="locale-save-error" class="form-message form-error" role="alert" hidden><p>Не удалось сохранить язык. Возвращён предыдущий выбор. Попробуй ещё раз.</p></div>
+        </section>
         <article class="profile-summary">
           <span class="profile-avatar" aria-hidden="true"><svg class="icon"><use href="#icon-user"/></svg></span>
           <div class="profile-identity"><h2>Твой профиль</h2><p>Практика чешского · живой диалог</p></div>

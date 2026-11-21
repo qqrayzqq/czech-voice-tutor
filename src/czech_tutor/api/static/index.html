@@ -39,17 +39,14 @@
       </div>
     </header>
 
-    <nav class="page-nav" aria-label="Разделы приложения">
-      <span class="page-nav-link" aria-current="page">Разбор</span>
-      <a id="profile-link" class="page-nav-link" href="./profile.html">Профиль</a>
-    </nav>
+
 
     <main id="main-content">
       <section class="hero" aria-labelledby="page-title">
         <div>
           <p class="eyebrow"><span class="status-dot"></span> ТВОЯ ПРАКТИКА ЧЕШСКОГО</p>
           <h1 id="page-title">Разбор ответа<span class="title-dot">.</span></h1>
-          <p class="hero-description">Маленькие исправления.<br class="mobile-break"> Больше уверенности в разговоре.</p>
+          <p id="page-description" class="hero-description">Маленькие исправления.<br class="mobile-break"> Больше уверенности в разговоре.</p>
         </div>
         <div class="hero-art" aria-hidden="true"><span>ř</span><svg class="icon"><use href="#icon-spark"/></svg><i>ahoj!</i></div>
       </section>
@@ -74,7 +71,7 @@
       <section id="feedback" aria-label="Сохранённый разбор" hidden>
         <div class="tabs" role="tablist" aria-label="Разделы разбора">
           <button id="corrections-tab" class="tab" role="tab" type="button" aria-selected="true" aria-controls="corrections-panel">
-            <svg class="icon"><use href="#icon-spark"/></svg>Исправления<span id="corrections-count" class="count">0</span>
+            <svg class="icon"><use href="#icon-spark"/></svg>Разбор<span id="corrections-count" class="count">0</span>
           </button>
           <button id="reply-tab" class="tab" role="tab" type="button" aria-selected="false" aria-controls="reply-panel" tabindex="-1">
             <svg class="icon"><use href="#icon-message"/></svg>Ответ бота
@@ -83,12 +80,15 @@
 
         <section id="corrections-panel" role="tabpanel" aria-labelledby="corrections-tab" tabindex="0">
           <div class="section-heading"><h2>Как сказать точнее</h2><span id="corrections-caption"></span></div>
+          <p id="explanation-language" class="explanation-language" hidden></p>
           <div id="correction-list" class="correction-list"></div>
           <div id="empty-state" class="empty-card" hidden>
             <span class="success-mark"><svg class="icon"><use href="#icon-check"/></svg></span>
-            <h3>В этом сообщении нет исправлений</h3>
-            <p>Модель не предложила правок. Продолжай разговор —<br>практика помогает говорить свободнее.</p>
+            <h3 id="empty-title">Ошибок нет</h3>
+            <p id="empty-description">Продолжай разговор — практика помогает говорить свободнее.</p>
           </div>
+          <div id="advice-section" hidden><div class="section-heading"><h2>Как сказать естественнее</h2><span>СОВЕТЫ</span></div><div id="advice-list" class="correction-list"></div></div>
+          <aside id="note-card" class="note-card" hidden><span class="note-mark" aria-hidden="true">i</span><div><h2>Пояснение</h2><p id="note-text"></p></div></aside>
           <p class="review-note"><svg class="icon"><use href="#icon-info"/></svg>Разбор подготовлен ИИ. Если правило кажется спорным, уточни его у преподавателя или в справочнике.</p>
         </section>
 
@@ -97,7 +97,6 @@
           <article class="reply-card"><span class="reply-label"><span class="status-dot"></span>CZECH VOICE TUTOR</span><p id="reply-text" lang="cs"></p></article>
         </section>
 
-        <aside id="note-card" class="note-card" hidden><span class="note-mark" aria-hidden="true">i</span><div><h2>Небольшая подсказка</h2><p id="note-text"></p></div></aside>
       </section>
 
       <noscript><div class="state-card"><h2>Нужен JavaScript</h2><p>Для загрузки разбора открой страницу в Telegram с включённым JavaScript.</p></div></noscript>

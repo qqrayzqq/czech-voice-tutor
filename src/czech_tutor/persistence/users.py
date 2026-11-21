@@ -81,3 +81,16 @@ async def update_response_mode(session: AsyncSession, telegram_user_id: int, mod
         .returning(User.telegram_user_id)
     )
     return result.scalar_one_or_none() is not None
+
+
+async def update_interface_language(
+    session: AsyncSession, telegram_user_id: int, language: str
+) -> bool:
+    """Update only the learner's interface/explanation language."""
+    result = await session.execute(
+        update(User)
+        .where(User.telegram_user_id == telegram_user_id)
+        .values(interface_language=language)
+        .returning(User.telegram_user_id)
+    )
+    return result.scalar_one_or_none() is not None

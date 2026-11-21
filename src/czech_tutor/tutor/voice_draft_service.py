@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from czech_tutor.persistence.models import VoiceJob
+from czech_tutor.persistence.models import User, VoiceJob
 from czech_tutor.persistence.voice_jobs import get_voice_job
 from czech_tutor.tutor.voice_schemas import (
     SavedVoiceDraft,
@@ -70,4 +70,8 @@ async def save_voice_draft(
         draft=VoiceDraft(job_id=job.id, revision=job.revision, text=job.confirmed_text),
         telegram_chat_id=job.telegram_chat_id,
         changed=changed,
+        card_message_id=job.card_message_id,
+        interface_language=(
+            learner.interface_language if (learner := await session.get(User, user_id)) else "ru"
+        ),
     )

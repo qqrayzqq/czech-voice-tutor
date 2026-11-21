@@ -27,6 +27,7 @@ async def get_recent_turns(
             user_message.role == "user",
             user_message.generation_status == "completed",
             assistant_message.role == "assistant",
+            assistant_message.feedback_status.not_in(("superseded", "clarification")),
             user_message.id < before_message_id,
             assistant_message.id < before_message_id,
             assistant_message.telegram_chat_id.is_not(None),
@@ -43,3 +44,29 @@ async def get_recent_turns(
     rows = result.all()
 
     return [(user, assistant) for user, assistant in reversed(rows)]
+
+
+async def get_latest_clarification(
+    session: AsyncSession, conversation_id: int, before_source_id: int
+) -> tuple[int, str] | None:
+    """Return only the latest delivered assistant question, without its ASR source.
+
+    Inspect the latest delivered reply first, rather than searching backwards
+    for any clarification: an old question must not survive a later normal turn.
+    """
+    result = await session.execute(
+        select(Message)
+        .where(
+            Message.conversation_id == conversation_id,
+            Message.role == "assistant",
+            Message.reply_to_message_id < before_source_id,
+            Message.telegram_chat_id.is_not(None),
+            Message.telegram_message_id.is_not(None),
+        )
+        .order_by(Message.reply_to_message_id.desc())
+        .limit(1)
+    )
+    latest = result.scalar_one_or_none()
+    if latest is None or latest.feedback_status != "clarification":
+        return None
+    return latest.id, latest.text

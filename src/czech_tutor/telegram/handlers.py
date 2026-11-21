@@ -6,9 +6,12 @@ from aiogram.enums import ChatType
 from aiogram.filters import CommandStart
 from aiogram.types import Message
 
-from czech_tutor.telegram.reply_sender import SpeechActions, send_tutor_reply
+from czech_tutor.telegram.localization import ui
+from czech_tutor.telegram.menu import set_profile_menu
+from czech_tutor.telegram.reply_sender import NoticeActions, SpeechActions, send_tutor_reply
 from czech_tutor.telegram.voice_handlers import (
     VoiceActions,
+    clear_obsolete_controls,
     present_voice_input,
     register_voice_handlers,
 )
@@ -30,6 +33,8 @@ def create_router(
     mini_app_url: str | None = None,
     voice_actions: VoiceActions | None = None,
     speech_actions: SpeechActions | None = None,
+    notice_actions: NoticeActions | None = None,
+    load_language: Callable[[int], Awaitable[str]] | None = None,
 ) -> Router:
     router = Router(name="local_text_bot")
     router.message.filter(
@@ -41,21 +46,31 @@ def create_router(
         F.from_user.id.in_(allowed_user_ids),
     )
 
+    async def language(user_id: int) -> str:
+        return await load_language(user_id) if load_language else "ru"
+
     @router.message(CommandStart())
     async def start(message: Message) -> None:
+        if message.from_user is None:
+            return
+        locale = await language(message.from_user.id)
+        await set_profile_menu(message.bot, message.from_user.id, mini_app_url, locale)
         await message.answer(
-            "Ahoj! Я помогу тебе практиковать чешский.\n\n"
-            "Напиши сообщение по-чешски или по-русски: можем поболтать, "
-            "разобрать фразу или узнать новое слово.\n\n"
-            + (
-                "Распознанный текст можно проверить и исправить перед отправкой. "
-                "/voice — вернуться к голосовому."
-                if voice_actions
-                else "Пока общаемся текстом; голосовые появятся позже."
-            )
+            ui("start", locale)
+            + "\n\n"
+            + ui("start_voice" if voice_actions else "start_text", locale),
+            parse_mode=None,
         )
 
-    register_voice_handlers(router, voice_actions, confirm_reply_sent, mini_app_url, speech_actions)
+    register_voice_handlers(
+        router,
+        voice_actions,
+        confirm_reply_sent,
+        mini_app_url,
+        speech_actions,
+        load_language,
+        notice_actions,
+    )
 
     @router.message(F.text)
     async def handle_text(message: Message) -> None:
@@ -67,7 +82,16 @@ def create_router(
                     message.from_user.id, message.chat.id, message.message_id, message.text
                 )
                 if edited is not None:
-                    await present_voice_input(message, edited, mini_app_url)
+                    await present_voice_input(
+                        message,
+                        edited,
+                        mini_app_url,
+                        remember_card=getattr(voice_actions, "remember_card", None),
+                        claim_card=getattr(voice_actions, "claim_card", None),
+                        release_card=getattr(voice_actions, "release_card", None),
+                        reconcile_card=getattr(voice_actions, "reconcile_card", None),
+                        owner_id=message.from_user.id,
+                    )
                     return
             answer = await reply_to_text(
                 message.from_user.id,
@@ -79,8 +103,11 @@ def create_router(
         except InputTooLongError as error:
             try:
                 await message.answer(
-                    "Слишком длинное сообщение. Сейчас можно отправить не больше "
-                    f"{error.max_chars} символов. Сократи текст и отправь снова.",
+                    ui(
+                        "input_limit",
+                        await language(message.from_user.id),
+                        max_chars=error.max_chars,
+                    ),
                     parse_mode=None,
                 )
             except Exception:
@@ -94,14 +121,14 @@ def create_router(
             return
         except EmptyVoiceTextError:
             await message.answer(
-                "Текст не должен быть пустым. Пришли исправленный вариант или открой /voice.",
+                ui("empty_text", await language(message.from_user.id)),
                 parse_mode=None,
             )
             return
         except (LLMError, StorageError):
             try:
                 await message.answer(
-                    "Сейчас не удалось получить ответ. Попробуй чуть позже.",
+                    ui("error", await language(message.from_user.id)),
                     parse_mode=None,
                 )
             except Exception:
@@ -117,6 +144,7 @@ def create_router(
         if answer is None:
             return
 
+        await clear_obsolete_controls(message, message.from_user.id, voice_actions)
         try:
             sent = await send_tutor_reply(
                 message,
@@ -124,6 +152,7 @@ def create_router(
                 answer,
                 mini_app_url,
                 speech_actions,
+                notice_actions,
             )
         except Exception:
             logger.warning("Failed to send tutor reply: reply_id=%s", answer.reply_id)

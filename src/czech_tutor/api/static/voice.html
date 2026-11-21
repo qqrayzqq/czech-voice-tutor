@@ -53,6 +53,7 @@
         <p id="voice-load-error-message"></p>
         <div class="state-actions"><button id="voice-retry" class="primary-button" type="button">Попробовать ещё раз</button></div>
       </section>
+      <p id="voice-demo-notice" class="preview-notice" hidden>Демо редактора · изменения не сохраняются в Telegram</p>
       <form id="voice-editor" class="voice-card" aria-label="Правка распознанного текста" hidden>
         <div class="voice-field-heading">
           <label for="voice-text">Распознанный текст</label>
@@ -70,7 +71,7 @@
           <button id="voice-save" class="primary-button" type="submit" disabled>Сохранить текст<svg class="icon" aria-hidden="true"><use href="#icon-check"/></svg></button>
           <button id="voice-cancel" class="voice-cancel" type="button">Отмена</button>
         </div>
-        <p class="voice-confirmation-note">После сохранения подтверди отправку в чате.</p>
+        <p class="voice-confirmation-note">Сохранение обновит эту же карточку в чате. Затем нажми «Отправить».</p>
       </form>
       <section id="voice-saved" class="state-card" role="status" aria-live="polite" tabindex="-1" hidden>
         <span class="success-mark" aria-hidden="true"><svg class="icon"><use href="#icon-check"/></svg></span>

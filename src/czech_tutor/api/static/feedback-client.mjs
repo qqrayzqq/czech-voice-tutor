@@ -19,8 +19,13 @@ export function parseReplyId(search) {
 function validateFeedback(data, replyId) {
   if (!data || data.reply_id !== replyId || typeof data.reply_cs !== 'string'
     || typeof data.note_ru !== 'string' || !Array.isArray(data.corrections)
+    || (data.feedback_status !== undefined && !['evaluated', 'not_evaluated', 'clarification', 'superseded'].includes(data.feedback_status))
+    || (data.feedback_language !== undefined && !['ru', 'uk'].includes(data.feedback_language))
+    || (data.interface_language !== undefined && !['ru', 'uk'].includes(data.interface_language))
+    || (data.advice_count !== undefined && (!Number.isSafeInteger(data.advice_count) || data.advice_count < 0))
     || !data.corrections.every(item => item && ['original', 'corrected', 'explanation_ru']
-      .every(key => typeof item[key] === 'string'))) {
+      .every(key => typeof item[key] === 'string')
+      && (item.kind === undefined || ['error', 'advice'].includes(item.kind)))) {
     throw new FeedbackError('invalid-response');
   }
   return data;
@@ -61,4 +66,41 @@ export async function loadFeedback(replyId, initData, {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export function feedbackPresentation(feedback) {
+  const status = feedback.feedback_status || 'evaluated';
+  const current = status === 'evaluated' ? feedback.corrections : [];
+  return {
+    status,
+    showNote: ['evaluated', 'not_evaluated'].includes(status) && Boolean(feedback.note_ru?.trim()),
+    errors: current.filter(item => item.kind !== 'advice'),
+    advice: current.filter(item => item.kind === 'advice'),
+  };
+}
+
+export function feedbackHeading(feedback, tab) {
+  if (tab === 1) return {
+    title: 'Текст ответа',
+    description: 'Прочитай ответ в своём темпе и возвращайся к разговору.',
+  };
+  const { status, errors, advice } = feedbackPresentation(feedback);
+  if (status === 'not_evaluated') return {
+    title: 'Пояснение', description: 'Ответ на твой вопрос — без оценки твоей фразы.',
+  };
+  if (status === 'clarification') return {
+    title: 'Уточним смысл', description: 'Бот задаёт уточняющий вопрос. Оценки этой фразы пока нет.',
+  };
+  if (status === 'superseded') return {
+    title: 'Оценка отозвана', description: 'Прежний разбор скрыт после уточнения. Здесь доступен сохранённый ответ.',
+  };
+  if (errors.length) return {
+    title: 'Разбор ответа', description: 'Маленькие исправления. Больше уверенности в разговоре.',
+  };
+  if (advice.length) return {
+    title: 'Небольшой совет', description: 'Твоя фраза верна. Вот как сделать её естественнее.',
+  };
+  return {
+    title: 'Всё правильно', description: 'Ошибок нет. Продолжай разговор в своём темпе.',
+  };
 }

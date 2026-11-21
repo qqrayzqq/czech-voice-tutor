@@ -1,7 +1,13 @@
+import { t, onLanguageChange } from './localization.mjs';
 import { parseReplyId } from './feedback-client.mjs';
 
-export function initialFeedbackTab(search) {
-  return new URLSearchParams(search).get('tab') === 'reply' ? 1 : 0;
+export function initialFeedbackTab(search, feedback) {
+  const tab = new URLSearchParams(search).get('tab');
+  if (tab === 'reply') return 1;
+  if (tab === 'corrections') return 0;
+  if (!feedback) return 0;
+  if (feedback.feedback_status && feedback.feedback_status !== 'evaluated') return 1;
+  return feedback.corrections?.length ? 0 : 1;
 }
 
 export function buildMiniAppLink(page, search) {
@@ -25,7 +31,7 @@ export function initializeMiniApp() {
   function applyTheme() {
     const theme = manualTheme || telegram?.colorScheme || (systemTheme.matches ? 'dark' : 'light');
     document.documentElement.dataset.theme = theme;
-    themeButton.setAttribute('aria-label', theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему');
+    themeButton.setAttribute('aria-label', t(theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'));
   }
   themeButton.addEventListener('click', () => {
     manualTheme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
@@ -39,6 +45,7 @@ export function initializeMiniApp() {
     telegram.onEvent('themeChanged', applyTheme);
   }
   systemTheme.addEventListener('change', applyTheme);
+  onLanguageChange(applyTheme);
   applyTheme();
   return telegram;
 }

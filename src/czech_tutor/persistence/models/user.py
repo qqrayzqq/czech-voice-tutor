@@ -9,6 +9,7 @@ class User(Base):
 
     __tablename__ = "users"
     __table_args__ = (
+        CheckConstraint("interface_language IN ('ru', 'uk')", name="ck_users_interface_language"),
         CheckConstraint(
             "language_level IN ('A1', 'A2', 'B1', 'B2', 'C1', 'C2')",
             name="ck_users_language_level",
@@ -22,6 +23,8 @@ class User(Base):
             name="ck_users_answer_length",
         ),
     )
+    interface_language: Mapped[str] = mapped_column(Text, server_default="ru")
+
     telegram_user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
     username: Mapped[str | None] = mapped_column(Text)
     language_level: Mapped[str | None] = mapped_column(Text)
