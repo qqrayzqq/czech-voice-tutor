@@ -8,7 +8,8 @@ import lameenc
 
 from czech_tutor.tutor.errors import TTSError
 
-SPEECH_MODEL = "heygen/heygen-voice-1-turbo"
+# Temporary free endpoint; never fall back to the paid model when it retires.
+SPEECH_MODEL = "heygen/heygen-voice-1-turbo:free"
 SPEECH_VOICES = (
     "nadine",
     "tabitha",
