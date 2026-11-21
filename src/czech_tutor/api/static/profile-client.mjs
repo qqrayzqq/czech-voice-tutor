@@ -1,4 +1,4 @@
-import { ANSWER_LENGTHS, LANGUAGE_LEVELS } from './profile-state.mjs';
+import { ANSWER_LENGTHS, LANGUAGE_LEVELS, RESPONSE_MODES } from './profile-state.mjs';
 
 export class ProfileError extends Error {
   constructor(code) {
@@ -42,7 +42,7 @@ export async function loadProfile(initData, options = {}) {
   const data = await requestProfile('', initData, options);
   if (!data || Array.isArray(data)
     || !(data.language_level === null || LANGUAGE_LEVELS.includes(data.language_level))
-    || !ANSWER_LENGTHS.includes(data.answer_length)) {
+    || !ANSWER_LENGTHS.includes(data.answer_length) || !RESPONSE_MODES.includes(data.response_mode)) {
     throw new ProfileError('invalid-response');
   }
   return data;
@@ -65,4 +65,8 @@ export function updateLanguageLevel(value, initData, options = {}) {
 
 export function updateAnswerLength(value, initData, options = {}) {
   return savePreference('/answer-length', 'answer_length', value, ANSWER_LENGTHS, initData, options);
+}
+
+export function updateResponseMode(value, initData, options = {}) {
+  return savePreference('/response-mode', 'response_mode', value, RESPONSE_MODES, initData, options);
 }

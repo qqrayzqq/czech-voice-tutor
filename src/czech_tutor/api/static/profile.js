@@ -1,6 +1,6 @@
 import { buildMiniAppLink, initializeMiniApp } from './mini-app-ui.mjs';
 import { createProfilePreferences } from './profile-state.mjs';
-import { loadProfile, updateAnswerLength, updateLanguageLevel } from './profile-client.mjs';
+import { loadProfile, updateAnswerLength, updateLanguageLevel, updateResponseMode } from './profile-client.mjs';
 
 const byId = id => document.getElementById(id);
 const params = new URLSearchParams(window.location.search);
@@ -9,7 +9,7 @@ const previewState = demo ? params.get('state') : null;
 let preferences;
 function setPreferences(settings = {}) {
   const profile = createProfilePreferences(settings);
-  preferences = { level: profile.languageLevel, length: profile.answerLength };
+  preferences = { level: profile.languageLevel, length: profile.answerLength, mode: profile.responseMode };
 }
 setPreferences();
 const radios = {
@@ -44,16 +44,21 @@ demoParams.set('demo', '1');
 byId('profile-demo-link').href = `?${demoParams}`;
 
 const textResponseToggle = byId('text-response-toggle');
-// Preview only: this intentionally does not read or write the stored response_mode.
-textResponseToggle.checked = false;
 textResponseToggle.addEventListener('change', () => {
-  byId('response-mode-status').textContent = textResponseToggle.checked
-    ? 'В примере выбран текстовый ответ.'
-    : 'В примере выбран голосовой ответ.';
+  selectPreference('mode', textResponseToggle.checked ? 'text' : 'voice');
 });
 
 function renderPreference(key) {
   const preference = preferences[key];
+  if (key === 'mode') {
+    textResponseToggle.checked = preference.selectedValue === 'text';
+    textResponseToggle.disabled = preference.saving;
+    byId('response-mode-status').textContent = preference.saving ? 'Сохраняем…'
+      : preference.error ? 'Сохранение не подтверждено. Повтори попытку.'
+      : `${demo ? 'В демо выбран' : 'Сохранён'} ${preference.savedValue === 'text' ? 'текстовый' : 'голосовой'} ответ.`;
+    byId('mode-save-error').hidden = !preference.error;
+    return;
+  }
   radios[key].forEach(radio => {
     radio.checked = radio.value === preference.selectedValue;
     radio.setAttribute('aria-disabled', String(preference.saving));
@@ -92,7 +97,7 @@ async function selectPreference(key, value) {
         throw new Error('Synthetic profile preference save failure');
       }
     } else {
-      const save = key === 'level' ? updateLanguageLevel : updateAnswerLength;
+      const save = { level: updateLanguageLevel, length: updateAnswerLength, mode: updateResponseMode }[key];
       await save(selected, telegram.initData);
     }
   });
@@ -144,7 +149,7 @@ async function showProfile({ showError = false, keepLoading = false } = {}) {
   }
 }
 
-Object.keys(preferences).forEach(key => {
+Object.keys(radios).forEach(key => {
   radios[key].forEach(radio => {
     radio.addEventListener('change', () => selectPreference(key, radio.value));
     radio.addEventListener('click', event => {
@@ -160,6 +165,8 @@ Object.keys(preferences).forEach(key => {
     selectPreference(key, preferences[key].selectedValue);
   });
 });
+
+byId('mode-retry').addEventListener('click', () => selectPreference('mode', preferences.mode.selectedValue));
 
 byId('profile-retry').addEventListener('click', () => showProfile());
 showProfile({ showError: previewState === 'error', keepLoading: previewState === 'loading' });
