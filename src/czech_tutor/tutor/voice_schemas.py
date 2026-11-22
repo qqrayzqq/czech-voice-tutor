@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from czech_tutor.tutor.schemas import ReplyToSend
 
-MAX_VOICE_SECONDS = 120
+MAX_VOICE_SECONDS = 60
 MAX_VOICE_BYTES = 5 * 1024 * 1024
 MAX_VOICE_TEXT_CHARS = 2000
 
