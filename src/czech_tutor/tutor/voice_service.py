@@ -66,30 +66,37 @@ def _snapshot(job: VoiceJob, *, interface_language: str) -> VoiceInput:
 
 async def _read(session_factory: SessionFactory, user_id: int, job_id: int) -> VoiceInput | None:
     async with session_factory.begin() as session:
-        job = await jobs.get_voice_job(session, job_id)
-        if job is None or job.telegram_user_id != user_id:
-            return None
-        learner = await session.get(User, user_id)
-        snapshot = _snapshot(
-            job, interface_language=learner.interface_language if learner else "ru"
-        )
-        can_recover = False
-        if job.status in {"confirmed", "awaiting_edit"} and job.source_message_id:
-            reply = await get_tutor_reply(session, job.source_message_id)
-            can_recover = reply is not None and reply.telegram_message_id is None
-            if reply is None:
-                source = await session.get(Message, job.source_message_id)
-                if source is not None:
-                    created = (
-                        source.created_at.replace(tzinfo=UTC)
-                        if (source.created_at.tzinfo is None)
-                        else source.created_at
-                    )
-                    if source.generation_status == "failed":
-                        return replace(snapshot, failure_reason="generation_failed")
-                    if created < datetime.now(UTC) - timedelta(minutes=2):
-                        return replace(snapshot, failure_reason="generation_interrupted")
-        return replace(snapshot, can_recover_reply=can_recover)
+        return await _read_in_session(session, user_id, job_id)
+
+
+async def _read_in_session(session: AsyncSession, user_id: int, job_id: int) -> VoiceInput | None:
+    result = await session.execute(
+        select(VoiceJob, User.interface_language)
+        .outerjoin(User, User.telegram_user_id == VoiceJob.telegram_user_id)
+        .where(VoiceJob.id == job_id, VoiceJob.telegram_user_id == user_id)
+    )
+    owned = result.one_or_none()
+    if owned is None:
+        return None
+    job, locale = owned
+    snapshot = _snapshot(job, interface_language=locale or "ru")
+    can_recover = False
+    if job.status in {"confirmed", "awaiting_edit"} and job.source_message_id:
+        reply = await get_tutor_reply(session, job.source_message_id)
+        can_recover = reply is not None and reply.telegram_message_id is None
+        if reply is None:
+            source = await session.get(Message, job.source_message_id)
+            if source is not None:
+                created = (
+                    source.created_at.replace(tzinfo=UTC)
+                    if (source.created_at.tzinfo is None)
+                    else source.created_at
+                )
+                if source.generation_status == "failed":
+                    return replace(snapshot, failure_reason="generation_failed")
+                if created < datetime.now(UTC) - timedelta(minutes=2):
+                    return replace(snapshot, failure_reason="generation_interrupted")
+    return replace(snapshot, can_recover_reply=can_recover)
 
 
 async def _cleanup_job(
@@ -112,7 +119,7 @@ async def _cleanup_job(
         )
 
 
-async def _cleanup_for_user(
+async def cleanup_voice_resources(
     session_factory: SessionFactory, client: httpx.AsyncClient, api_key: str, user_id: int
 ) -> None:
     """Bounded opportunistic cleanup, including cancelled jobs once Soniox is terminal."""
@@ -133,6 +140,8 @@ async def _poll_job(
     api_key: str,
     user_id: int,
     job: VoiceJob,
+    *,
+    defer_cleanup: bool = False,
 ) -> VoiceInput | None:
     if not job.soniox_transcription_id:
         return await _read(session_factory, user_id, job.id)
@@ -148,7 +157,7 @@ async def _poll_job(
     except TranscriptionFailed:
         async with session_factory.begin() as session:
             await jobs.mark_voice_job_failed(session, job.id)
-        await _cleanup_for_user(session_factory, client, api_key, user_id)
+        await cleanup_voice_resources(session_factory, client, api_key, user_id)
         return await _read(session_factory, user_id, job.id)
     metadata = transcript.metadata if isinstance(transcript, Transcript) else None
     transcript = transcript.text if isinstance(transcript, Transcript) else transcript
@@ -172,7 +181,9 @@ async def _poll_job(
                     failure_reason="empty" if not transcript.strip() else "too_long",
                 )
             )
-    await _cleanup_for_user(session_factory, client, api_key, user_id)
+        if defer_cleanup:
+            return await _read_in_session(session, user_id, job.id)
+    await cleanup_voice_resources(session_factory, client, api_key, user_id)
     return await _read(session_factory, user_id, job.id)
 
 
@@ -186,6 +197,8 @@ async def process_voice_message(
     telegram_message_id: int,
     telegram_file_id: str,
     audio_bytes: bytes,
+    *,
+    defer_cleanup: bool = False,
 ) -> VoiceInput | None:
     """Only a new committed reservation may upload and create paid ASR work.
 
@@ -228,7 +241,7 @@ async def process_voice_message(
                 job.failure_reason = "unused_file"
         if not proceed:
             # No create was attempted, so file-only cleanup is safe.
-            await _cleanup_for_user(session_factory, client, soniox_api_key, telegram_user_id)
+            await cleanup_voice_resources(session_factory, client, soniox_api_key, telegram_user_id)
             return await _read(session_factory, telegram_user_id, job_id)
         try:
             transcription_id = await create_transcription_job(client, soniox_api_key, file_id)
@@ -244,8 +257,15 @@ async def process_voice_message(
                 job.expires_at = datetime.now(UTC) + timedelta(minutes=15)
             proceed = job.status == "transcribing"
         if proceed:
-            return await _poll_job(session_factory, client, soniox_api_key, telegram_user_id, job)
-        await _cleanup_for_user(session_factory, client, soniox_api_key, telegram_user_id)
+            return await _poll_job(
+                session_factory,
+                client,
+                soniox_api_key,
+                telegram_user_id,
+                job,
+                defer_cleanup=defer_cleanup,
+            )
+        await cleanup_voice_resources(session_factory, client, soniox_api_key, telegram_user_id)
         return await _read(session_factory, telegram_user_id, job_id)
     except SQLAlchemyError:
         logger.warning(
@@ -286,7 +306,7 @@ async def load_voice_input(
                 # An unavailable current ASR must not hide older saved replies.
                 state = await _read(session_factory, telegram_user_id, job.id)
         else:
-            await _cleanup_for_user(session_factory, client, soniox_api_key, telegram_user_id)
+            await cleanup_voice_resources(session_factory, client, soniox_api_key, telegram_user_id)
             state = await _read(session_factory, telegram_user_id, job.id)
         if job_id is None and state is not None:
             async with session_factory.begin() as session:
@@ -398,7 +418,7 @@ async def cancel_voice_input(
                 return False
             changed = await jobs.cancel_voice_job(session, job_id)
         if changed:
-            await _cleanup_for_user(session_factory, client, soniox_api_key, telegram_user_id)
+            await cleanup_voice_resources(session_factory, client, soniox_api_key, telegram_user_id)
         return changed
     except SQLAlchemyError:
         raise StorageError("Failed to cancel voice input.") from None

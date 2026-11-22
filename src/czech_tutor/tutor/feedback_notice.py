@@ -1,11 +1,10 @@
 """Stable Czech feedback copy and persisted at-most-once notice attempts."""
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from czech_tutor.persistence.feedback_queries import get_reply_for_user
-from czech_tutor.persistence.models import Message
+from czech_tutor.persistence.models import Conversation, Message
 from czech_tutor.tutor.errors import StorageError
 from czech_tutor.tutor.schemas import ReplyToSend
 
@@ -45,18 +44,21 @@ async def claim_notice(
 ) -> bool:
     try:
         async with session_factory.begin() as session:
-            if await get_reply_for_user(session, reply_id, user_id) is None:
-                return False
             result = await session.execute(
                 update(Message)
                 .where(
                     Message.id == reply_id,
+                    Message.role == "assistant",
+                    Message.conversation_id.in_(
+                        select(Conversation.id).where(Conversation.telegram_user_id == user_id)
+                    ),
                     Message.notice_state == "pending",
                     Message.feedback_status == "evaluated",
                     Message.telegram_message_id.is_(None),
                 )
                 .values(notice_state="sending")
                 .returning(Message.id)
+                .execution_options(synchronize_session=False)
             )
             return result.scalar_one_or_none() is not None
     except SQLAlchemyError:
@@ -68,15 +70,18 @@ async def complete_notice(
 ) -> None:
     try:
         async with session_factory.begin() as session:
-            if await get_reply_for_user(session, reply_id, user_id) is None:
-                return
             await session.execute(
                 update(Message)
                 .where(
                     Message.id == reply_id,
+                    Message.role == "assistant",
+                    Message.conversation_id.in_(
+                        select(Conversation.id).where(Conversation.telegram_user_id == user_id)
+                    ),
                     Message.notice_state == "sending",
                 )
                 .values(notice_state="sent", notice_message_id=message_id)
+                .execution_options(synchronize_session=False)
             )
     except SQLAlchemyError:
         raise StorageError("Failed to record feedback notice.") from None

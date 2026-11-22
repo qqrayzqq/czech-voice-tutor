@@ -1,5 +1,6 @@
 """One synthesis per saved assistant reply, independent of input modality."""
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from uuid import uuid4
 
@@ -35,6 +36,8 @@ async def prepare_speech(
     user_id: int,
     reply_id: int,
     voice: str,
+    *,
+    on_reserved: Callable[[], Awaitable[None]] | None = None,
 ) -> SpeechAudio | TextReply | None:
     """None means already leased; only a committed reservation permits the paid POST."""
     try:
@@ -48,6 +51,8 @@ async def prepare_speech(
             validate_spoken_text(text)
             reserved = await audio.reserve_audio(session, reply_id, SPEECH_MODEL, voice)
         if reserved:
+            if on_reserved is not None:
+                await on_reserved()
             try:
                 mp3 = await synthesize_speech(client, api_key, text, voice)
             except TTSError:
@@ -55,25 +60,32 @@ async def prepare_speech(
                     await audio.fail_audio(session, reply_id)
                 raise
             async with session_factory.begin() as session:
-                await audio.save_audio(session, reply_id, mp3)
+                token = uuid4().hex
+                if await audio.save_and_claim_audio(session, reply_id, mp3, token):
+                    return SpeechAudio(token, mp3=mp3)
+                return await _claim_saved_audio(session, reply_id)
         async with session_factory.begin() as session:
-            saved = await audio.get_audio(session, reply_id)
-            if saved is None or saved.status in {"failed", "generating"}:
-                # An interrupted/ambiguous POST is never issued a second time.
-                raise TTSError("Speech generation is unavailable.")
-            if saved.status == "delivered":
-                return SpeechAudio(
-                    "",
-                    file_id=saved.telegram_file_id,
-                    sent_chat_id=saved.telegram_chat_id,
-                    sent_message_id=saved.telegram_message_id,
-                )
-            token = uuid4().hex
-            if not await audio.claim_audio(session, reply_id, token):
-                return None
-            return SpeechAudio(token, mp3=saved.mp3, file_id=saved.telegram_file_id)
+            return await _claim_saved_audio(session, reply_id)
     except SQLAlchemyError:
         raise StorageError("Failed to prepare speech.") from None
+
+
+async def _claim_saved_audio(session: AsyncSession, reply_id: int) -> SpeechAudio | None:
+    saved = await audio.get_audio(session, reply_id)
+    if saved is None or saved.status in {"failed", "generating"}:
+        # An interrupted/ambiguous POST is never issued a second time, including a save rollback.
+        raise TTSError("Speech generation is unavailable.")
+    if saved.status == "delivered":
+        return SpeechAudio(
+            "",
+            file_id=saved.telegram_file_id,
+            sent_chat_id=saved.telegram_chat_id,
+            sent_message_id=saved.telegram_message_id,
+        )
+    token = uuid4().hex
+    if not await audio.claim_audio(session, reply_id, token):
+        return None
+    return SpeechAudio(token, mp3=saved.mp3, file_id=saved.telegram_file_id)
 
 
 async def complete_speech(
@@ -87,9 +99,9 @@ async def complete_speech(
 ) -> None:
     try:
         async with session_factory.begin() as session:
-            if await audio.get_owned_reply(session, user_id, reply_id) is None:
-                return
-            await audio.finish_audio(session, reply_id, token, file_id, chat_id, message_id)
+            await audio.finish_audio(
+                session, user_id, reply_id, token, file_id, chat_id, message_id
+            )
     except SQLAlchemyError:
         raise StorageError("Failed to record speech delivery.") from None
 
@@ -102,7 +114,6 @@ async def release_speech(
 ) -> None:
     try:
         async with session_factory.begin() as session:
-            if await audio.get_owned_reply(session, user_id, reply_id) is not None:
-                await audio.release_audio(session, reply_id, token)
+            await audio.release_audio(session, user_id, reply_id, token)
     except SQLAlchemyError:
         raise StorageError("Failed to release speech delivery.") from None
