@@ -2,7 +2,7 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from czech_tutor.persistence.models import Message, MessageCorrection
+from czech_tutor.persistence.models import Conversation, Message, MessageCorrection
 from czech_tutor.tutor.schemas import TutorReply, build_diacritics_correction
 
 
@@ -91,6 +91,11 @@ async def save_tutor_reply(
                     Message.conversation_id == source.conversation_id,
                     Message.role == "assistant",
                     Message.reply_to_message_id < source.id,
+                    Message.reply_to_message_id > (
+                        select(Conversation.history_reset_after_id)
+                        .where(Conversation.id == source.conversation_id)
+                        .scalar_subquery()
+                    ),
                     Message.telegram_chat_id.is_not(None),
                     Message.telegram_message_id.is_not(None),
                 )
@@ -208,16 +213,18 @@ async def supersede_previous_feedback(
     """
     result = await session.execute(
         select(Message)
+        .join(Conversation, Conversation.id == Message.conversation_id)
         .where(
             Message.conversation_id == conversation_id,
             Message.role == "assistant",
             Message.reply_to_message_id < before_source_id,
+            Message.reply_to_message_id > Conversation.history_reset_after_id,
             Message.telegram_chat_id.is_not(None),
             Message.telegram_message_id.is_not(None),
         )
         .order_by(Message.reply_to_message_id.desc())
         .limit(1)
-        .with_for_update()
+        .with_for_update(of=Message)
     )
     previous = result.scalar_one_or_none()
     if previous is not None:
@@ -235,6 +242,11 @@ async def supersede_clarification(
             Message.conversation_id == conversation_id,
             Message.role == "assistant",
             Message.feedback_status == "clarification",
+            Message.reply_to_message_id > (
+                select(Conversation.history_reset_after_id)
+                .where(Conversation.id == conversation_id)
+                .scalar_subquery()
+            ),
         )
         .values(feedback_status="superseded")
     )

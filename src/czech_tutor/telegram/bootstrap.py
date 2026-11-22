@@ -10,17 +10,21 @@ from czech_tutor.persistence.models import VoiceJob
 from czech_tutor.persistence.users import get_user, upsert_user
 from czech_tutor.telegram.handlers import create_router
 from czech_tutor.telegram.reply_sender import NoticeActions, SpeechActions
+from czech_tutor.telegram.request_guard import RequestGuardActions
 from czech_tutor.telegram.voice_cards import reconcile_voice_card
 from czech_tutor.telegram.voice_handlers import VoiceActions
 from czech_tutor.tutor.delivery_service import confirm_reply_delivery
 from czech_tutor.tutor.errors import StorageError
 from czech_tutor.tutor.feedback_notice import claim_notice, complete_notice
+from czech_tutor.tutor.request_guard import acquire_request, release_request
+from czech_tutor.tutor.reset_service import reset_conversation_context
 from czech_tutor.tutor.schemas import ReplyToSend
 from czech_tutor.tutor.speech_service import complete_speech, prepare_speech, release_speech
 from czech_tutor.tutor.text_service import process_text_message
 from czech_tutor.tutor.voice_schemas import VoiceInput, VoiceReply
 from czech_tutor.tutor.voice_service import (
     cancel_voice_input,
+    cleanup_voice_resources,
     confirm_voice_input,
     load_voice_input,
     process_voice_message,
@@ -35,6 +39,11 @@ def create_dispatcher(
     session_factory: async_sessionmaker[AsyncSession],
     client: httpx.AsyncClient,
 ) -> Dispatcher:
+    async def reset_context(user_id: int, username: str | None, chat_id: int, message_id: int):
+        return await reset_conversation_context(
+            session_factory, user_id, username, chat_id, message_id
+        )
+
     async def reply_to_text(
         telegram_user_id: int,
         username: str | None,
@@ -83,6 +92,12 @@ def create_dispatcher(
             telegram_message_id=telegram_message_id,
             telegram_file_id=telegram_file_id,
             audio_bytes=audio_bytes,
+            defer_cleanup=True,
+        )
+
+    async def cleanup_voice(user_id: int) -> None:
+        await cleanup_voice_resources(
+            session_factory, client, settings.soniox_api_key or "", user_id
         )
 
     async def advance_voice(user_id: int, state: VoiceInput) -> VoiceReply | None:
@@ -249,6 +264,7 @@ def create_dispatcher(
             cancel=cancel_voice,
             release_reply=release_reply,
             advance=advance_voice,
+            cleanup=cleanup_voice,
             claim_card=claim_card,
             release_card=release_card,
             reconcile_card=reconcile_card,
@@ -265,6 +281,17 @@ def create_dispatcher(
             user_id,
             reply_id,
             settings.tts_voice,
+        )
+
+    async def prepare_audio_with_notice(user_id: int, reply_id: int, on_reserved):
+        return await prepare_speech(
+            session_factory,
+            client,
+            settings.open_router_api_key,
+            user_id,
+            reply_id,
+            settings.tts_voice,
+            on_reserved=on_reserved,
         )
 
     async def complete_audio(
@@ -289,11 +316,18 @@ def create_dispatcher(
         await release_speech(session_factory, user_id, reply_id, token)
 
     speech_actions = (
-        SpeechActions(prepare_audio, complete_audio, release_audio)
+        SpeechActions(prepare_audio, complete_audio, release_audio, prepare_audio_with_notice)
         if settings.tts_enabled
         else None
     )
     dispatcher = Dispatcher()
+
+    async def acquire_processing(user_id: int, username: str | None, request_key: str):
+        return await acquire_request(session_factory, user_id, username, request_key)
+
+    async def release_processing(user_id: int, token: str) -> None:
+        await release_request(session_factory, user_id, token)
+
     dispatcher.include_router(
         create_router(
             settings.allowed_user_ids,
@@ -304,6 +338,8 @@ def create_dispatcher(
             speech_actions=speech_actions,
             notice_actions=NoticeActions(prepare_notice, finish_notice),
             load_language=load_language,
+            reset_context=reset_context,
+            request_guard=RequestGuardActions(acquire_processing, release_processing),
         )
     )
     return dispatcher

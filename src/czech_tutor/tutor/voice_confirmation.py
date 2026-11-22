@@ -8,21 +8,19 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import httpx
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, true, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from czech_tutor.integrations.openrouter import generate_reply
 from czech_tutor.persistence import voice_jobs as jobs
 from czech_tutor.persistence.conversations import get_or_create_conversation
-from czech_tutor.persistence.feedback_queries import get_corrections_for_message
 from czech_tutor.persistence.history import get_latest_clarification, get_recent_turns
 from czech_tutor.persistence.messages import (
-    get_tutor_reply,
     mark_generation_failed,
     reserve_user_message,
 )
-from czech_tutor.persistence.models import Message, VoiceJob
+from czech_tutor.persistence.models import Message, MessageCorrection, User, VoiceJob
 from czech_tutor.persistence.users import get_user
 from czech_tutor.tutor.context import trim_history
 from czech_tutor.tutor.errors import InputTooLongError, LLMError, StorageError
@@ -82,56 +80,84 @@ async def _claim_saved_reply(
 ) -> VoiceReply | None:
     async with session_factory.begin() as session:
         job = await jobs.get_voice_job(session, job_id, lock=True)
-        if job is None or job.telegram_user_id != user_id or not job.source_message_id:
-            return None
-        saved = await get_tutor_reply(session, job.source_message_id)
-        if saved is None or saved.telegram_message_id is not None:
-            return None
-        now = datetime.now(UTC)
-        token = uuid4().hex
-        claimed = await session.execute(
-            update(VoiceJob)
-            .where(
-                VoiceJob.id == job.id,
-                or_(VoiceJob.delivery_lease_until.is_(None), VoiceJob.delivery_lease_until < now),
-            )
-            .values(delivery_token=token, delivery_lease_until=now + timedelta(seconds=90))
-            .returning(VoiceJob.id)
-            .execution_options(synchronize_session=False)
+        return await _claim_saved_reply_in_session(session, user_id, job)
+
+
+async def _claim_saved_reply_in_session(
+    session: AsyncSession, user_id: int, job: VoiceJob | None
+) -> VoiceReply | None:
+    """Claim delivery using the caller's locked job and transaction."""
+    if (
+        job is None
+        or job.telegram_user_id != user_id
+        or not job.source_message_id
+        or job.failure_reason == "context_reset"
+    ):
+        return None
+    counts = (
+        select(
+            func.count().filter(MessageCorrection.kind == "error").label("errors"),
+            func.count().filter(MessageCorrection.kind == "advice").label("advice"),
         )
-        if claimed.scalar_one_or_none() is None:
-            return None
-        corrections = await get_corrections_for_message(session, job.source_message_id)
-        learner = await get_user(session, user_id)
-        locale = learner.interface_language if learner else "ru"
-        fallback = None
-        if job.status == "awaiting_edit" and job.failure_reason == "clarification":
-            fallback = VoiceInput(
-                job.id,
-                job.status,
-                job.transcript,
-                job.revision,
-                failure_reason=job.failure_reason,
-                card_message_id=job.card_message_id,
-                interface_language=locale,
-                clarification_count=job.clarification_count,
-            )
-        return VoiceReply(
+        .where(MessageCorrection.message_id == job.source_message_id)
+        .subquery()
+    )
+    result = await session.execute(
+        select(Message, User.interface_language, counts.c.errors, counts.c.advice)
+        .select_from(Message)
+        .outerjoin(User, User.telegram_user_id == user_id)
+        .join(counts, true())
+        .where(Message.reply_to_message_id == job.source_message_id)
+    )
+    saved_reply = result.one_or_none()
+    if saved_reply is None:
+        return None
+    saved, locale, corrections_count, advice_count = saved_reply
+    if saved.telegram_message_id is not None:
+        return None
+    now = datetime.now(UTC)
+    token = uuid4().hex
+    claimed = await session.execute(
+        update(VoiceJob)
+        .where(
+            VoiceJob.id == job.id,
+            or_(VoiceJob.delivery_lease_until.is_(None), VoiceJob.delivery_lease_until < now),
+        )
+        .values(delivery_token=token, delivery_lease_until=now + timedelta(seconds=90))
+        .returning(VoiceJob.id)
+        .execution_options(synchronize_session=False)
+    )
+    if claimed.scalar_one_or_none() is None:
+        return None
+    locale = locale or "ru"
+    fallback = None
+    if job.status == "awaiting_edit" and job.failure_reason == "clarification":
+        fallback = VoiceInput(
             job.id,
-            token,
-            ReplyToSend(
-                reply_id=saved.id,
-                reply_cs=saved.text,
-                corrections_count=sum(c.kind == "error" for c in corrections),
-                advice_count=sum(c.kind == "advice" for c in corrections),
-                feedback_status=saved.feedback_status,
-                feedback_language=saved.feedback_language,
-                interface_language=locale,
-                has_note=bool(saved.note_ru and saved.note_ru.strip()),
-            ),
+            job.status,
+            job.transcript,
             job.revision,
-            fallback_input=fallback,
+            failure_reason=job.failure_reason,
+            card_message_id=job.card_message_id,
+            interface_language=locale,
+            clarification_count=job.clarification_count,
         )
+    return VoiceReply(
+        job.id,
+        token,
+        ReplyToSend(
+            reply_id=saved.id,
+            reply_cs=saved.text,
+            corrections_count=corrections_count,
+            advice_count=advice_count,
+            feedback_status=saved.feedback_status,
+            feedback_language=saved.feedback_language,
+            interface_language=locale,
+            has_note=bool(saved.note_ru and saved.note_ru.strip()),
+        ),
+        job.revision,
+        fallback_input=fallback,
+    )
 
 
 async def confirm_voice_input(
@@ -151,6 +177,7 @@ async def confirm_voice_input(
         if recover:
             return await _claim_saved_reply(session_factory, telegram_user_id, job_id)
         async with session_factory.begin() as session:
+            learner = await get_user(session, telegram_user_id, lock=True)
             await jobs.expire_voice_jobs(session, telegram_user_id)
             job = await jobs.get_voice_job(session, job_id, lock=True)
             if (
@@ -182,7 +209,6 @@ async def confirm_voice_input(
                 session, job_id, None if automatic else final_text, revision=revision
             ):
                 return None
-            learner = await get_user(session, telegram_user_id)
             level = learner.language_level if learner else None
             length = learner.answer_length if learner else "short"
             locale = learner.interface_language if learner else "ru"
@@ -258,7 +284,10 @@ async def confirm_voice_input(
                 await mark_generation_failed(session, source_id)
                 await session.execute(
                     update(VoiceJob)
-                    .where(VoiceJob.id == job_id)
+                    .where(
+                        VoiceJob.id == job_id,
+                        VoiceJob.failure_reason.is_distinct_from("context_reset"),
+                    )
                     .values(failure_reason="generation_failed")
                 )
             raise
@@ -270,6 +299,8 @@ async def confirm_voice_input(
         )
         async with session_factory.begin() as session:
             current = await jobs.get_voice_job(session, job_id, lock=True)
+            if current is None or current.failure_reason == "context_reset":
+                return None
             if result.feedback_status == "clarification":
                 current.clarification_count = clarification_count + 1
                 if current.clarification_count >= 2:
@@ -292,7 +323,7 @@ async def confirm_voice_input(
                         .where(Message.reply_to_message_id == old_source_id)
                         .values(feedback_status="superseded")
                     )
-        return await _claim_saved_reply(session_factory, telegram_user_id, job_id)
+            return await _claim_saved_reply_in_session(session, telegram_user_id, current)
     except SQLAlchemyError:
         logger.warning("Failed to confirm voice input: job_id=%s", job_id)
         raise StorageError("Failed to confirm voice input.") from None

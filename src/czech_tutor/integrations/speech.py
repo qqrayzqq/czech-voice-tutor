@@ -25,6 +25,7 @@ SPEECH_VOICES = (
 MAX_SPEECH_CHARS = 4000
 MAX_PCM_BYTES = 44100 * 2 * 180
 MAX_MP3_BYTES = 2 * 1024 * 1024
+PCM_CHUNK_BYTES = 64 * 1024
 
 
 def validate_spoken_text(value: str) -> None:
@@ -38,19 +39,44 @@ def validate_spoken_text(value: str) -> None:
         raise TTSError("Reply is unsuitable for speech.")
 
 
-def encode_mp3(pcm: bytes) -> bytes:
-    if not pcm or len(pcm) % 2 or len(pcm) > MAX_PCM_BYTES:
-        raise TTSError("Invalid PCM audio.")
+def _create_mp3_encoder() -> lameenc.Encoder:
     encoder = lameenc.Encoder()
     encoder.set_bit_rate(64)
     encoder.set_in_sample_rate(44100)
     encoder.set_channels(1)
     encoder.set_quality(2)
     encoder.silence()
+    return encoder
+
+
+def encode_mp3(pcm: bytes) -> bytes:
+    if not pcm or len(pcm) % 2 or len(pcm) > MAX_PCM_BYTES:
+        raise TTSError("Invalid PCM audio.")
+    encoder = _create_mp3_encoder()
     audio = bytes(encoder.encode(pcm) + encoder.flush())
     if not audio or len(audio) > MAX_MP3_BYTES:
         raise TTSError("Invalid encoded speech size.")
     return audio
+
+
+async def _encode_mp3_chunk(encoder: lameenc.Encoder, pcm: bytes | None) -> bytes:
+    """Finish the one bounded worker before propagating cancellation."""
+    worker = asyncio.create_task(
+        asyncio.to_thread(encoder.flush) if pcm is None else asyncio.to_thread(encoder.encode, pcm)
+    )
+    try:
+        return bytes(await asyncio.shield(worker))
+    except asyncio.CancelledError:
+        while not worker.done():
+            try:
+                await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                continue
+            except Exception:
+                break
+        if not worker.cancelled():
+            worker.exception()
+        raise
 
 
 async def synthesize_speech(
@@ -87,12 +113,26 @@ async def synthesize_speech(
                     raise TTSError("Speech provider rejected the request.")
                 if response.headers.get("content-type", "").split(";")[0] != "audio/pcm":
                     raise TTSError("Unexpected speech content type.")
-                pcm = bytearray()
-                async for chunk in response.aiter_bytes():
-                    if len(pcm) + len(chunk) > MAX_PCM_BYTES:
+                encoder = _create_mp3_encoder()
+                pcm_size = 0
+                audio = bytearray()
+                async for chunk in response.aiter_bytes(chunk_size=PCM_CHUNK_BYTES):
+                    pcm_size += len(chunk)
+                    if pcm_size > MAX_PCM_BYTES:
                         raise TTSError("Speech response exceeds the audio limit.")
-                    pcm.extend(chunk)
-        return await asyncio.to_thread(encode_mp3, bytes(pcm))
+                    if len(chunk) % 2:
+                        raise TTSError("Invalid PCM audio.")
+                    encoded = await _encode_mp3_chunk(encoder, chunk)
+                    if len(audio) + len(encoded) > MAX_MP3_BYTES:
+                        raise TTSError("Invalid encoded speech size.")
+                    audio.extend(encoded)
+                if not pcm_size:
+                    raise TTSError("Invalid PCM audio.")
+                encoded = await _encode_mp3_chunk(encoder, None)
+                if not audio and not encoded or len(audio) + len(encoded) > MAX_MP3_BYTES:
+                    raise TTSError("Invalid encoded speech size.")
+                audio.extend(encoded)
+                return bytes(audio)
     except (httpx.HTTPError, TimeoutError, RuntimeError, ValueError) as error:
         if isinstance(error, TTSError):
             raise

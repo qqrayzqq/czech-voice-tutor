@@ -3,12 +3,13 @@ from collections.abc import Awaitable, Callable
 
 from aiogram import F, Router
 from aiogram.enums import ChatType
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.types import Message
 
 from czech_tutor.telegram.localization import ui
 from czech_tutor.telegram.menu import set_profile_menu
 from czech_tutor.telegram.reply_sender import NoticeActions, SpeechActions, send_tutor_reply
+from czech_tutor.telegram.request_guard import RequestGuardActions, RequestGuardMiddleware
 from czech_tutor.telegram.voice_handlers import (
     VoiceActions,
     clear_obsolete_controls,
@@ -35,6 +36,8 @@ def create_router(
     speech_actions: SpeechActions | None = None,
     notice_actions: NoticeActions | None = None,
     load_language: Callable[[int], Awaitable[str]] | None = None,
+    reset_context: Callable[[int, str | None, int, int], Awaitable[str | None]] | None = None,
+    request_guard: RequestGuardActions | None = None,
 ) -> Router:
     router = Router(name="local_text_bot")
     router.message.filter(
@@ -45,11 +48,14 @@ def create_router(
         F.message.chat.type == ChatType.PRIVATE,
         F.from_user.id.in_(allowed_user_ids),
     )
+    if request_guard is not None:
+        router.message.middleware(RequestGuardMiddleware(request_guard))
+        router.callback_query.middleware(RequestGuardMiddleware(request_guard))
 
     async def language(user_id: int) -> str:
         return await load_language(user_id) if load_language else "ru"
 
-    @router.message(CommandStart())
+    @router.message(CommandStart(), flags={"concurrency_exempt": True})
     async def start(message: Message) -> None:
         if message.from_user is None:
             return
@@ -58,9 +64,33 @@ def create_router(
         await message.answer(
             ui("start", locale)
             + "\n\n"
-            + ui("start_voice" if voice_actions else "start_text", locale),
+            + ui("start_voice" if voice_actions else "start_text", locale)
+            + "\n\n"
+            + ui("reset_help", locale),
             parse_mode=None,
         )
+
+    @router.message(Command("reset"), flags={"concurrency_exempt": True})
+    async def reset(message: Message) -> None:
+        if message.from_user is None:
+            return
+        try:
+            if reset_context is None:
+                raise StorageError("Conversation reset is not configured.")
+            locale = await reset_context(
+                message.from_user.id,
+                message.from_user.username,
+                message.chat.id,
+                message.message_id,
+            )
+        except StorageError:
+            await message.answer(
+                ui("reset_error", await language(message.from_user.id)), parse_mode=None
+            )
+            return
+        if locale is not None:
+            await message.answer(ui("reset_done", locale), parse_mode=None)
+            await clear_obsolete_controls(message, message.from_user.id, voice_actions)
 
     register_voice_handlers(
         router,

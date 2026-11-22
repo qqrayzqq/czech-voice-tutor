@@ -1,5 +1,6 @@
 """Shared presentation for replies to typed and confirmed spoken input."""
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -20,6 +21,13 @@ class SpeechActions:
     prepare: Callable[[int, int], Awaitable[SpeechAudio | TextReply | None]]
     complete: Callable[[int, int, str, str, int, int], Awaitable[None]]
     release: Callable[[int, int, str], Awaitable[None]]
+    prepare_with_notice: (
+        Callable[
+            [int, int, Callable[[], Awaitable[None]]],
+            Awaitable[SpeechAudio | TextReply | None],
+        ]
+        | None
+    ) = None
 
 
 @dataclass(frozen=True)
@@ -65,6 +73,49 @@ class DeliveryReceipt:
     message_id: int
 
 
+async def _prepare_audio(
+    message: Message,
+    user_id: int,
+    answer: ReplyToSend,
+    mini_app_url: str,
+    speech: SpeechActions,
+    notices: NoticeActions | None,
+) -> tuple[SpeechAudio | TextReply | None, bool]:
+    """Overlap notices only after a new committed synthesis reservation; always join them."""
+    notice_task: asyncio.Task[None] | None = None
+
+    async def on_reserved() -> None:
+        nonlocal notice_task
+        if notice_task is None:
+            notice_task = asyncio.create_task(
+                _send_notice(message, user_id, answer, mini_app_url, notices)
+            )
+
+    try:
+        try:
+            if speech.prepare_with_notice is not None:
+                audio = await speech.prepare_with_notice(user_id, answer.reply_id, on_reserved)
+            else:
+                audio = await speech.prepare(user_id, answer.reply_id)
+        except (TTSError, StorageError):
+            logger.warning(
+                "Speech unavailable; delivering saved text: reply_id=%s", answer.reply_id
+            )
+            audio = TextReply()
+        if notice_task is not None:
+            await notice_task
+        return audio, notice_task is not None
+    finally:
+        if notice_task is not None:
+            if not notice_task.done():
+                notice_task.cancel()
+            try:
+                await notice_task
+            except asyncio.CancelledError:
+                # Caller cancellation/exception is already propagating; drain the child.
+                pass
+
+
 async def send_tutor_reply(
     message: Message,
     user_id: int,
@@ -74,19 +125,18 @@ async def send_tutor_reply(
     notices: NoticeActions | None = None,
 ) -> Message | DeliveryReceipt | None:
     audio: SpeechAudio | TextReply | None = TextReply()
+    notice_started = False
     # Voice output requires a working route to its exact readable transcript.
     if speech is not None and mini_app_url:
-        try:
-            audio = await speech.prepare(user_id, answer.reply_id)
-        except (TTSError, StorageError):
-            logger.warning(
-                "Speech unavailable; delivering saved text: reply_id=%s", answer.reply_id
-            )
+        audio, notice_started = await _prepare_audio(
+            message, user_id, answer, mini_app_url, speech, notices
+        )
     if audio is None:
         return None
     if isinstance(audio, TextReply):
-        await _send_notice(message, user_id, answer, mini_app_url, notices)
-        return await message.answer(
+        if not notice_started:
+            await _send_notice(message, user_id, answer, mini_app_url, notices)
+        sent = await message.answer(
             answer.reply_cs,
             parse_mode=None,
             reply_markup=build_feedback_keyboard(
@@ -103,10 +153,12 @@ async def send_tutor_reply(
             )
             else None,
         )
+        return sent
     if audio.sent_chat_id is not None and audio.sent_message_id is not None:
         return DeliveryReceipt(Chat(id=audio.sent_chat_id, type="private"), audio.sent_message_id)
     assert speech is not None
-    await _send_notice(message, user_id, answer, mini_app_url, notices)
+    if not notice_started:
+        await _send_notice(message, user_id, answer, mini_app_url, notices)
     try:
         if not audio.file_id and not audio.mp3:
             raise TTSError("Saved audio is empty.")

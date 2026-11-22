@@ -21,6 +21,7 @@ class Settings:
     soniox_api_key: str | None = field(default=None, repr=False)
     tts_enabled: bool = True
     tts_voice: str = "nadine"
+    webhook_max_connections: int = 4
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -63,6 +64,18 @@ class Settings:
                 "TELEGRAM_WEBHOOK_SECRET must contain 1-256 ASCII letters, digits, '_' or '-'."
             )
 
+        raw_max_connections = os.environ.get("TELEGRAM_WEBHOOK_MAX_CONNECTIONS", "4").strip()
+        try:
+            webhook_max_connections = int(raw_max_connections)
+        except ValueError:
+            raise ConfigurationError(
+                "TELEGRAM_WEBHOOK_MAX_CONNECTIONS must be an integer from 1 to 100."
+            ) from None
+        if not 1 <= webhook_max_connections <= 100:
+            raise ConfigurationError(
+                "TELEGRAM_WEBHOOK_MAX_CONNECTIONS must be an integer from 1 to 100."
+            )
+
         soniox_api_key = os.environ.get("SONIOX_API_KEY", "").strip() or None
         tts_enabled = os.environ.get("TTS_ENABLED", "true").strip().lower()
         if tts_enabled not in {"true", "false"}:
@@ -81,4 +94,5 @@ class Settings:
             soniox_api_key=soniox_api_key,
             tts_enabled=tts_enabled == "true",
             tts_voice=tts_voice,
+            webhook_max_connections=webhook_max_connections,
         )

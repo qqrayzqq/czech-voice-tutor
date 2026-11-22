@@ -2,7 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from czech_tutor.persistence.models import Message
+from czech_tutor.persistence.models import Conversation, Message
 
 
 async def get_recent_turns(
@@ -21,6 +21,7 @@ async def get_recent_turns(
             assistant_message,
             assistant_message.reply_to_message_id == user_message.id,
         )
+        .join(Conversation, Conversation.id == user_message.conversation_id)
         .where(
             user_message.conversation_id == conversation_id,
             assistant_message.conversation_id == conversation_id,
@@ -29,6 +30,7 @@ async def get_recent_turns(
             assistant_message.role == "assistant",
             assistant_message.feedback_status.not_in(("superseded", "clarification")),
             user_message.id < before_message_id,
+            user_message.id > Conversation.history_reset_after_id,
             assistant_message.id < before_message_id,
             assistant_message.telegram_chat_id.is_not(None),
             assistant_message.telegram_message_id.is_not(None),
@@ -56,10 +58,12 @@ async def get_latest_clarification(
     """
     result = await session.execute(
         select(Message)
+        .join(Conversation, Conversation.id == Message.conversation_id)
         .where(
             Message.conversation_id == conversation_id,
             Message.role == "assistant",
             Message.reply_to_message_id < before_source_id,
+            Message.reply_to_message_id > Conversation.history_reset_after_id,
             Message.telegram_chat_id.is_not(None),
             Message.telegram_message_id.is_not(None),
         )

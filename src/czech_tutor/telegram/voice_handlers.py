@@ -55,6 +55,7 @@ class VoiceActions:
     release_card: Callable[[int, int, str], Awaitable[bool]] | None = None
     reconcile_card: Callable[[Bot, int, int], Awaitable[bool]] | None = None
     obsolete_cards: Callable[[int], Awaitable[list[int]]] | None = None
+    cleanup: Callable[[int], Awaitable[None]] | None = None
 
 
 class _VoiceFileTooLarge(ValueError):
@@ -73,6 +74,7 @@ async def record_voice_action(
     bot: Bot, chat_id: int, *, interval: float = 4.5
 ) -> AsyncIterator[None]:
     """Keep the chat action alive without delaying processing on Telegram's response."""
+
     async def _pulse() -> None:
         while True:
             try:
@@ -93,6 +95,37 @@ async def record_voice_action(
             await task
         except asyncio.CancelledError:
             pass
+
+
+@asynccontextmanager
+async def voice_cleanup(actions: VoiceActions, user_id: int) -> AsyncIterator[None]:
+    """Overlap free cleanup with reply preparation, and join it before handler exit."""
+    cleanup = getattr(actions, "cleanup", None)
+    if cleanup is None:
+        yield
+        return
+
+    async def run() -> None:
+        try:
+            await cleanup(user_id)
+        except Exception:
+            logger.warning("Voice resource cleanup failed")
+
+    task = asyncio.create_task(run())
+    cancelled = False
+    try:
+        await asyncio.sleep(0)
+        yield
+    except asyncio.CancelledError:
+        cancelled = True
+        task.cancel()
+        raise
+    finally:
+        try:
+            await task
+        except asyncio.CancelledError:
+            if not cancelled:
+                raise
 
 
 def voice_confirmation_text(text: str, language: str = "ru") -> str:
@@ -417,7 +450,8 @@ def register_voice_handlers(
                     audio_bytes,
                 )
                 if voice is not None and voice.status != "confirmed":
-                    await present(message, voice, message.from_user.id)
+                    async with voice_cleanup(actions, message.from_user.id):
+                        await present(message, voice, message.from_user.id)
         except ActiveVoiceJobError:
             await message.answer(ui("active", await locale(message.from_user.id)), parse_mode=None)
             try:

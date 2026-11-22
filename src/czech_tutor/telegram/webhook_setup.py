@@ -22,8 +22,9 @@ async def register_webhook(
         await bot.set_webhook(
             url=webhook_url,
             secret_token=settings.webhook_secret,
-            max_connections=1,
+            max_connections=settings.webhook_max_connections,
             allowed_updates=["message", "callback_query"],
+            drop_pending_updates=False,
         )
     finally:
         await bot.session.close()
@@ -63,6 +64,7 @@ def run() -> None:
             info = asyncio.run(get_webhook_status(settings))
             print(f"URL: {info.url or 'Not configured'}")
             print(f"Pending updates: {info.pending_update_count}")
+            print(f"Max connections: {info.max_connections}")
             print(f"Last delivery error: {info.last_error_message or 'None'}")
         else:
             asyncio.run(register_webhook(settings, args.webhook_url))
