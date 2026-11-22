@@ -33,10 +33,14 @@ async def upsert_user(
 async def get_user(
     session: AsyncSession,
     telegram_user_id: int,
+    *,
+    lock: bool = False,
 ) -> User | None:
     """Read a learner by Telegram ID without creating rows or committing."""
 
     statement = select(User).where(User.telegram_user_id == telegram_user_id)
+    if lock:
+        statement = statement.with_for_update()
     result = await session.execute(statement)
     return result.scalar_one_or_none()
 
